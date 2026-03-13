@@ -35,8 +35,9 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
-                // Khách vãng lai được đặt phòng mà không cần đăng nhập
+                // Khách vãng lai được đặt phòng + xem danh sách phòng
                 .requestMatchers(HttpMethod.POST, "/api/bookings").permitAll()
+                .requestMatchers(HttpMethod.GET,  "/api/rooms").permitAll()
                 .anyRequest().authenticated()
             )
             .sessionManagement(session ->
