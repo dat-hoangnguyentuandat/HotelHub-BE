@@ -23,6 +23,28 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     /* ── Tìm theo số điện thoại khách ── */
     List<Booking> findByGuestPhoneOrderByCreatedAtDesc(String guestPhone);
 
+    /* ── Admin: tìm kiếm kết hợp keyword + status + khoảng ngày ── */
+    @Query("""
+        SELECT b FROM Booking b
+        WHERE (:status IS NULL OR b.status = :status)
+          AND (:keyword IS NULL OR :keyword = ''
+               OR LOWER(b.guestName)  LIKE LOWER(CONCAT('%', :keyword, '%'))
+               OR LOWER(b.guestPhone) LIKE LOWER(CONCAT('%', :keyword, '%'))
+               OR LOWER(b.guestEmail) LIKE LOWER(CONCAT('%', :keyword, '%'))
+               OR LOWER(b.roomType)   LIKE LOWER(CONCAT('%', :keyword, '%'))
+          )
+          AND (:checkInFrom IS NULL  OR b.checkIn  >= :checkInFrom)
+          AND (:checkInTo   IS NULL  OR b.checkIn  <= :checkInTo)
+        ORDER BY b.createdAt DESC
+        """)
+    Page<Booking> searchBookings(
+        @Param("status")      BookingStatus status,
+        @Param("keyword")     String        keyword,
+        @Param("checkInFrom") LocalDate     checkInFrom,
+        @Param("checkInTo")   LocalDate     checkInTo,
+        Pageable pageable
+    );
+
     /* ── Kiểm tra phòng bị trùng ngày (loại trừ CANCELLED) ── */
     @Query("""
         SELECT COUNT(b) > 0 FROM Booking b
@@ -37,14 +59,26 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         @Param("checkOut")  LocalDate checkOut
     );
 
+    /* ── Kiểm tra trùng lịch loại trừ booking hiện tại (dùng khi update) ── */
+    @Query("""
+        SELECT COUNT(b) > 0 FROM Booking b
+        WHERE b.roomType = :roomType
+          AND b.id       != :excludeId
+          AND b.status NOT IN (com.example.backend.entity.BookingStatus.CANCELLED)
+          AND b.checkIn  < :checkOut
+          AND b.checkOut > :checkIn
+        """)
+    boolean existsConflictExcluding(
+        @Param("roomType")  String    roomType,
+        @Param("checkIn")   LocalDate checkIn,
+        @Param("checkOut")  LocalDate checkOut,
+        @Param("excludeId") Long      excludeId
+    );
+
     /* ══════════════════════════════════════════════════════════
        DASHBOARD QUERIES
     ══════════════════════════════════════════════════════════ */
 
-    /**
-     * Tổng doanh thu trong khoảng thời gian (chỉ tính booking CHECKED_IN hoặc CHECKED_OUT).
-     * Lọc theo checkIn (ngày khách bắt đầu ở) để phản ánh doanh thu theo kỳ lưu trú.
-     */
     @Query("""
         SELECT COALESCE(SUM(b.totalAmount), 0) FROM Booking b
         WHERE b.status IN (
@@ -59,10 +93,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         @Param("to")   LocalDate to
     );
 
-    /**
-     * Đếm lượt check-in (booking CHECKED_IN hoặc CHECKED_OUT) trong khoảng thời gian.
-     * Lọc theo checkIn để đếm đúng số lượt khách nhận phòng.
-     */
     @Query("""
         SELECT COUNT(b) FROM Booking b
         WHERE b.status IN (
@@ -77,10 +107,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         @Param("to")   LocalDate to
     );
 
-    /**
-     * Đếm số phòng đang bị chiếm dụng hôm nay:
-     * booking CONFIRMED hoặc CHECKED_IN mà checkIn <= today < checkOut.
-     */
     @Query("""
         SELECT COUNT(b) FROM Booking b
         WHERE b.status IN (
@@ -92,16 +118,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         """)
     long countOccupiedRoomsToday(@Param("today") LocalDate today);
 
-    /**
-     * Đếm booking theo trạng thái.
-     */
     long countByStatus(BookingStatus status);
 
-    /**
-     * Doanh thu theo từng loại phòng trong khoảng thời gian.
-     * Lọc theo checkIn để phản ánh doanh thu theo kỳ lưu trú.
-     * Trả về: [roomType, totalRevenue]
-     */
     @Query("""
         SELECT b.roomType, COALESCE(SUM(b.totalAmount), 0)
         FROM Booking b
@@ -119,10 +137,6 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         @Param("to")   LocalDate to
     );
 
-    /**
-     * 5 giao dịch gần nhất (tất cả trạng thái trừ CANCELLED),
-     * sắp xếp theo ngày tạo mới nhất.
-     */
     @Query("""
         SELECT b FROM Booking b
         WHERE b.status != com.example.backend.entity.BookingStatus.CANCELLED

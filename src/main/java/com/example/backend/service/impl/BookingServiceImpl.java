@@ -7,7 +7,6 @@ import com.example.backend.dto.response.PagedResponse;
 import com.example.backend.entity.Booking;
 import com.example.backend.entity.BookingStatus;
 import com.example.backend.entity.User;
-import com.example.backend.exception.BookingConflictException;
 import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.BookingRepository;
 import com.example.backend.repository.UserRepository;
@@ -16,11 +15,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -95,7 +96,7 @@ public class BookingServiceImpl implements BookingService {
     }
 
     /* ───────────────────────────────────────────────────────────────
-       HUỶ BOOKING
+       HUỶ BOOKING (khách tự huỷ)
     _______________________________________________________________ */
     @Override
     @Transactional
@@ -103,11 +104,9 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy booking #" + bookingId));
 
-        // Chỉ chủ booking mới được huỷ
         if (booking.getUser() == null || !booking.getUser().getEmail().equals(userEmail)) {
             throw new AccessDeniedException("Bạn không có quyền huỷ booking này");
         }
-
         if (booking.getStatus() == BookingStatus.CANCELLED) {
             throw new IllegalStateException("Booking đã được huỷ trước đó");
         }
@@ -121,17 +120,49 @@ public class BookingServiceImpl implements BookingService {
     }
 
     /* ───────────────────────────────────────────────────────────────
-       ADMIN – TẤT CẢ BOOKING
+       ADMIN – TẤT CẢ BOOKING (lọc status đơn giản)
     _______________________________________________________________ */
     @Override
     @Transactional(readOnly = true)
     public PagedResponse<BookingResponse> getAllBookings(BookingStatus status, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<Booking> p = (status != null)
                 ? bookingRepository.findByStatusOrderByCreatedAtDesc(status, pageable)
                 : bookingRepository.findAll(pageable);
 
         return toPagedResponse(p);
+    }
+
+    /* ───────────────────────────────────────────────────────────────
+       ADMIN – TÌM KIẾM NÂNG CAO
+    _______________________________________________________________ */
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse<BookingResponse> searchBookings(
+            BookingStatus status,
+            String        keyword,
+            LocalDate     checkInFrom,
+            LocalDate     checkInTo,
+            int page,
+            int size
+    ) {
+        Pageable pageable = PageRequest.of(page, size);
+        // Normalize keyword
+        String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
+
+        Page<Booking> p = bookingRepository.searchBookings(status, kw, checkInFrom, checkInTo, pageable);
+        return toPagedResponse(p);
+    }
+
+    /* ───────────────────────────────────────────────────────────────
+       ADMIN – LẤY CHI TIẾT MỘT BOOKING
+    _______________________________________________________________ */
+    @Override
+    @Transactional(readOnly = true)
+    public BookingResponse getBookingById(Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy booking #" + bookingId));
+        return BookingResponse.from(booking);
     }
 
     /* ───────────────────────────────────────────────────────────────
@@ -143,8 +174,31 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy booking #" + bookingId));
 
+        // Không cho phép cập nhật nếu đã huỷ (chỉ admin có thể force nếu cần)
+        if (booking.getStatus() == BookingStatus.CANCELLED && req.getStatus() != BookingStatus.CANCELLED) {
+            throw new IllegalStateException("Booking đã huỷ. Không thể thay đổi trạng thái.");
+        }
+        // Không cho phép đi ngược status flow (chỉ cảnh báo, không block để linh hoạt)
+
         booking.setStatus(req.getStatus());
         return BookingResponse.from(bookingRepository.save(booking));
+    }
+
+    /* ───────────────────────────────────────────────────────────────
+       ADMIN – XOÁ BOOKING (chỉ booking đã CANCELLED)
+    _______________________________________________________________ */
+    @Override
+    @Transactional
+    public void deleteBooking(Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy booking #" + bookingId));
+
+        if (booking.getStatus() != BookingStatus.CANCELLED) {
+            throw new IllegalStateException(
+                "Chỉ có thể xoá booking đã huỷ. Vui lòng huỷ booking trước khi xoá."
+            );
+        }
+        bookingRepository.delete(booking);
     }
 
     /* ───────────────────────────────────────────────────────────────
