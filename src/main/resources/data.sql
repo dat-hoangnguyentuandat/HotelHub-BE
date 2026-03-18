@@ -93,3 +93,22 @@ SELECT 'Trần Thị Mai', '0923456789', 'Yêu cầu đặc biệt khác',
        'Cần thêm gối mềm và chăn mỏng cho trẻ em.',
        'PENDING', NULL, NULL, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM special_requests WHERE guest_name = 'Trần Thị Mai' AND request_type = 'Yêu cầu đặc biệt khác');
+
+-- ═══════════════════════════════════════════════════════════════════
+-- CANCELLATION POLICIES – Chính sách hoàn tiền mặc định
+-- ═══════════════════════════════════════════════════════════════════
+INSERT INTO cancellation_policies (label, min_hours, refund_rate, display_order, created_at, updated_at)
+SELECT 'Hủy trước 72 giờ hoàn 100%', 72, 100, 0, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM cancellation_policies WHERE min_hours = 72);
+
+INSERT INTO cancellation_policies (label, min_hours, refund_rate, display_order, created_at, updated_at)
+SELECT 'Hủy trước 48 giờ hoàn 70%', 48, 70, 1, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM cancellation_policies WHERE min_hours = 48);
+
+INSERT INTO cancellation_policies (label, min_hours, refund_rate, display_order, created_at, updated_at)
+SELECT 'Hủy trước 24 giờ hoàn 50%', 24, 50, 2, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM cancellation_policies WHERE min_hours = 24);
+
+INSERT INTO cancellation_policies (label, min_hours, refund_rate, display_order, created_at, updated_at)
+SELECT 'Hủy trong ngày không hoàn (0%)', 0, 0, 3, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM cancellation_policies WHERE min_hours = 0);

@@ -71,6 +71,36 @@ public class Booking {
     @Column(columnDefinition = "TEXT")
     private String note;
 
+    /* ── Thông tin hủy phòng & hoàn tiền ── */
+
+    /** Lý do hủy phòng (do khách nhập khi hủy) */
+    @Column(columnDefinition = "TEXT")
+    private String cancelReason;
+
+    /** Thời điểm hủy phòng */
+    private LocalDateTime cancelledAt;
+
+    /** Tỷ lệ hoàn tiền (0-100), tính theo chính sách tại thời điểm hủy */
+    @Column(precision = 5, scale = 2)
+    private BigDecimal refundRate;
+
+    /** Số tiền thực tế được hoàn */
+    @Column(precision = 15, scale = 0)
+    private BigDecimal refundAmount;
+
+    /** Trạng thái hoàn tiền */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private RefundStatus refundStatus;
+
+    /** Ghi chú của admin khi xử lý hoàn tiền */
+    @Column(columnDefinition = "TEXT")
+    private String processNote;
+
+    /** Tên chính sách hoàn tiền đã áp dụng – lưu lại để hiển thị */
+    @Column(length = 200)
+    private String appliedPolicy;
+
     /* ── Liên kết user (có thể null nếu khách vãng lai) ── */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")

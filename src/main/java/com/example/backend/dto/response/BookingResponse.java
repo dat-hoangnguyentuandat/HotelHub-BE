@@ -2,6 +2,7 @@ package com.example.backend.dto.response;
 
 import com.example.backend.entity.Booking;
 import com.example.backend.entity.BookingStatus;
+import com.example.backend.entity.RefundStatus;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -31,6 +32,17 @@ public class BookingResponse {
     private String          note;
     private Long            userId;
     private String          userFullName;
+
+    /* ── Thông tin hủy & hoàn tiền ── */
+    private String          cancelReason;
+    private LocalDateTime   cancelledAt;
+    private BigDecimal      refundRate;
+    private BigDecimal      refundAmount;
+    private RefundStatus    refundStatus;
+    private String          refundStatusLabel;
+    private String          processNote;
+    private String          appliedPolicy;
+
     private LocalDateTime   createdAt;
     private LocalDateTime   updatedAt;
 
@@ -54,6 +66,14 @@ public class BookingResponse {
                 .note(b.getNote())
                 .userId(b.getUser() != null ? b.getUser().getId() : null)
                 .userFullName(b.getUser() != null ? b.getUser().getFullName() : null)
+                .cancelReason(b.getCancelReason())
+                .cancelledAt(b.getCancelledAt())
+                .refundRate(b.getRefundRate())
+                .refundAmount(b.getRefundAmount())
+                .refundStatus(b.getRefundStatus())
+                .refundStatusLabel(refundLabel(b.getRefundStatus()))
+                .processNote(b.getProcessNote())
+                .appliedPolicy(b.getAppliedPolicy())
                 .createdAt(b.getCreatedAt())
                 .updatedAt(b.getUpdatedAt())
                 .build();
@@ -66,6 +86,15 @@ public class BookingResponse {
             case CHECKED_IN  -> "Đã nhận phòng";
             case CHECKED_OUT -> "Đã trả phòng";
             case CANCELLED   -> "Đã huỷ";
+        };
+    }
+
+    private static String refundLabel(RefundStatus s) {
+        if (s == null) return null;
+        return switch (s) {
+            case PENDING_REFUND -> "Chờ xử lý";
+            case REFUNDED       -> "Đã hoàn tiền";
+            case REJECTED       -> "Từ chối hoàn";
         };
     }
 }
