@@ -38,6 +38,10 @@ public class SecurityConfig {
                 // Khách vãng lai được đặt phòng + xem danh sách phòng
                 .requestMatchers(HttpMethod.POST, "/api/bookings").permitAll()
                 .requestMatchers(HttpMethod.GET,  "/api/rooms").permitAll()
+                // Loyalty: user đăng nhập tự xem / đổi điểm
+                .requestMatchers("/api/loyalty/me", "/api/loyalty/me/**").authenticated()
+                // Loyalty admin: phân quyền tại @PreAuthorize trong Controller
+                .requestMatchers("/api/loyalty/admin/**").authenticated()
                 .anyRequest().authenticated()
             )
             .sessionManagement(session ->
