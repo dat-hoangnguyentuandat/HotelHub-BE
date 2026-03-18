@@ -11,7 +11,9 @@ import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.BookingRepository;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.service.BookingService;
+import com.example.backend.service.LoyaltyService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -25,12 +27,15 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BookingServiceImpl implements BookingService {
 
     private final BookingRepository bookingRepository;
     private final UserRepository    userRepository;
+    private final LoyaltyService    loyaltyService;
+
 
     /* ───────────────────────────────────────────────────────────────
        TẠO BOOKING
@@ -181,7 +186,18 @@ public class BookingServiceImpl implements BookingService {
         // Không cho phép đi ngược status flow (chỉ cảnh báo, không block để linh hoạt)
 
         booking.setStatus(req.getStatus());
-        return BookingResponse.from(bookingRepository.save(booking));
+        Booking saved = bookingRepository.save(booking);
+
+        // Tự động tích điểm khi trạng thái chuyển sang CHECKED_OUT
+        if (req.getStatus() == BookingStatus.CHECKED_OUT) {
+            try {
+                loyaltyService.earnPointsForBooking(bookingId);
+            } catch (Exception e) {
+                log.warn("Không thể tích điểm cho booking #{}: {}", bookingId, e.getMessage());
+            }
+        }
+
+        return BookingResponse.from(saved);
     }
 
     /* ───────────────────────────────────────────────────────────────
