@@ -65,3 +65,31 @@ INSERT INTO staff (full_name, role, phone, email, shift, status, note, avatar, c
 SELECT 'Lý Thị Mỹ Dung', 'Bếp', '0910000000', 'dung@hotelhub.com',
        'Ca chiều: 2 giờ chiều - 10 giờ tối', 'ON_LEAVE', NULL, NULL, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM staff WHERE email = 'dung@hotelhub.com');
+
+-- ================================================================
+--  Seed dữ liệu mẫu cho bảng special_requests
+-- ================================================================
+
+INSERT INTO special_requests (guest_name, guest_phone, request_type, content, status, admin_note, booking_id, created_at, updated_at)
+SELECT 'Nguyễn Văn Hùng', '0901234567', 'Không làm phiền',
+       'Không dọn phòng trong suốt thời gian lưu trú.',
+       'PENDING', NULL, NULL, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM special_requests WHERE guest_name = 'Nguyễn Văn Hùng' AND request_type = 'Không làm phiền');
+
+INSERT INTO special_requests (guest_name, guest_phone, request_type, content, status, admin_note, booking_id, created_at, updated_at)
+SELECT 'Lê Nguyễn Thế Kiệt', '0907654321', 'Không làm phiền',
+       'Không dọn phòng trong suốt thời gian lưu trú.',
+       'DONE', 'Đã thông báo bộ phận buồng phòng.', NULL, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM special_requests WHERE guest_name = 'Lê Nguyễn Thế Kiệt' AND request_type = 'Không làm phiền');
+
+INSERT INTO special_requests (guest_name, guest_phone, request_type, content, status, admin_note, booking_id, created_at, updated_at)
+SELECT 'Nguyễn Tuấn Anh', '0912345678', 'Mang hành lý lên phòng',
+       'Có nhiều hành lý, cần hỗ trợ vận chuyển.',
+       'DONE', 'Nhân viên đã hỗ trợ.', NULL, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM special_requests WHERE guest_name = 'Nguyễn Tuấn Anh' AND request_type = 'Mang hành lý lên phòng');
+
+INSERT INTO special_requests (guest_name, guest_phone, request_type, content, status, admin_note, booking_id, created_at, updated_at)
+SELECT 'Trần Thị Mai', '0923456789', 'Yêu cầu đặc biệt khác',
+       'Cần thêm gối mềm và chăn mỏng cho trẻ em.',
+       'PENDING', NULL, NULL, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM special_requests WHERE guest_name = 'Trần Thị Mai' AND request_type = 'Yêu cầu đặc biệt khác');
