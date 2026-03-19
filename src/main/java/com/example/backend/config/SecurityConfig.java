@@ -34,10 +34,16 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
+                // Preflight CORS – phải permit trước mọi rule khác
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
+                // Serve ảnh đã upload – public
+                .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
                 // Khách vãng lai được đặt phòng + xem danh sách phòng
                 .requestMatchers(HttpMethod.POST, "/api/bookings").permitAll()
                 .requestMatchers(HttpMethod.GET,  "/api/rooms").permitAll()
+                // Khách vãng lai xem dịch vụ bổ sung đang bán
+                .requestMatchers(HttpMethod.GET,  "/api/services").permitAll()
                 // Loyalty: user đăng nhập tự xem / đổi điểm
                 .requestMatchers("/api/loyalty/me", "/api/loyalty/me/**").authenticated()
                 // Loyalty admin: phân quyền tại @PreAuthorize trong Controller
