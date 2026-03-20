@@ -56,6 +56,10 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET,  "/api/bookings/*/payments").permitAll()
                 // Hủy payment – cho phép cả guest
                 .requestMatchers(HttpMethod.PATCH, "/api/payments/*/cancel").permitAll()
+                // ── Thông tin thanh toán (payment-info page) – yêu cầu đăng nhập ──
+                .requestMatchers(HttpMethod.GET, "/api/payments/my/info").authenticated()
+                .requestMatchers(HttpMethod.GET, "/api/payments/my/stats").authenticated()
+                .requestMatchers(HttpMethod.GET, "/api/payments/*/info").authenticated()
                 // Loyalty: user đăng nhập tự xem / đổi điểm
                 .requestMatchers("/api/loyalty/me", "/api/loyalty/me/**").authenticated()
                 // Loyalty admin: phân quyền tại @PreAuthorize trong Controller

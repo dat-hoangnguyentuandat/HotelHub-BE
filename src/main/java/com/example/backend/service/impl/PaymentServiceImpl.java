@@ -3,9 +3,11 @@ package com.example.backend.service.impl;
 import com.example.backend.dto.request.PaymentRequest;
 import com.example.backend.dto.request.PromoValidateRequest;
 import com.example.backend.dto.response.PagedResponse;
+import com.example.backend.dto.response.PaymentInfoResponse;
 import com.example.backend.dto.response.PaymentResponse;
 import com.example.backend.dto.response.PaymentStatsResponse;
 import com.example.backend.dto.response.PromoValidateResponse;
+import com.example.backend.dto.response.UserPaymentStatsResponse;
 import com.example.backend.entity.*;
 import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.BookingRepository;
@@ -249,6 +251,90 @@ public class PaymentServiceImpl implements PaymentService {
             null, null, userEmail, null, null, pageable);
 
         return buildPagedResponse(paymentsPage);
+    }
+
+    /* ══════════════════════════════════════════════════════
+       5b. GET MY PAYMENTS INFO (payment-info page)
+    ══════════════════════════════════════════════════════ */
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse<PaymentInfoResponse> getMyPaymentsInfo(
+            String userEmail,
+            PaymentStatus status,
+            PaymentMethod method,
+            String keyword,
+            LocalDate from,
+            LocalDate to,
+            int page,
+            int size) {
+
+        if (userEmail == null || userEmail.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                "Vui lòng đăng nhập để xem thông tin thanh toán");
+        }
+
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Payment> result = paymentRepository.findByUserEmailFiltered(
+            userEmail, status, method,
+            (keyword != null && !keyword.isBlank()) ? keyword.trim() : null,
+            from, to, pageable);
+
+        List<PaymentInfoResponse> content = result.getContent().stream()
+            .map(PaymentInfoResponse::from)
+            .toList();
+
+        return PagedResponse.<PaymentInfoResponse>builder()
+            .content(content)
+            .page(result.getNumber())
+            .size(result.getSize())
+            .totalElements(result.getTotalElements())
+            .totalPages(result.getTotalPages())
+            .last(result.isLast())
+            .build();
+    }
+
+    /* ══════════════════════════════════════════════════════
+       5c. GET MY PAYMENT STATS
+    ══════════════════════════════════════════════════════ */
+    @Override
+    @Transactional(readOnly = true)
+    public UserPaymentStatsResponse getMyPaymentStats(String userEmail) {
+        if (userEmail == null || userEmail.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                "Vui lòng đăng nhập để xem thống kê thanh toán");
+        }
+
+        long successCount   = paymentRepository.countByUserEmailAndStatus(userEmail, PaymentStatus.SUCCESS);
+        long pendingCount   = paymentRepository.countByUserEmailAndStatus(userEmail, PaymentStatus.PENDING)
+                            + paymentRepository.countByUserEmailAndStatus(userEmail, PaymentStatus.PROCESSING);
+        long failedCount    = paymentRepository.countByUserEmailAndStatus(userEmail, PaymentStatus.FAILED);
+        long cancelledCount = paymentRepository.countByUserEmailAndStatus(userEmail, PaymentStatus.CANCELLED)
+                            + paymentRepository.countByUserEmailAndStatus(userEmail, PaymentStatus.REFUNDED);
+        long totalCount     = successCount + pendingCount + failedCount + cancelledCount;
+
+        BigDecimal totalSpend      = paymentRepository.sumSuccessAmountByUserEmail(userEmail);
+        long       totalPoints     = paymentRepository.sumLoyaltyPointsEarnedByUserEmail(userEmail);
+
+        return UserPaymentStatsResponse.builder()
+            .totalCount(totalCount)
+            .successCount(successCount)
+            .pendingCount(pendingCount)
+            .failedCount(failedCount)
+            .cancelledCount(cancelledCount)
+            .totalSpend(totalSpend != null ? totalSpend : BigDecimal.ZERO)
+            .totalPointsEarned(totalPoints)
+            .build();
+    }
+
+    /* ══════════════════════════════════════════════════════
+       5d. GET PAYMENT INFO BY ID
+    ══════════════════════════════════════════════════════ */
+    @Override
+    @Transactional(readOnly = true)
+    public PaymentInfoResponse getPaymentInfoById(Long paymentId, String userEmail) {
+        Payment payment = getPaymentEntity(paymentId);
+        validatePaymentOwnership(payment, userEmail);
+        return PaymentInfoResponse.from(payment);
     }
 
     /* ══════════════════════════════════════════════════════

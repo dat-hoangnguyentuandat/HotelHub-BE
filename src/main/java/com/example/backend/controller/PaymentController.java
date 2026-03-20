@@ -3,9 +3,11 @@ package com.example.backend.controller;
 import com.example.backend.dto.request.PaymentRequest;
 import com.example.backend.dto.request.PromoValidateRequest;
 import com.example.backend.dto.response.PagedResponse;
+import com.example.backend.dto.response.PaymentInfoResponse;
 import com.example.backend.dto.response.PaymentResponse;
 import com.example.backend.dto.response.PaymentStatsResponse;
 import com.example.backend.dto.response.PromoValidateResponse;
+import com.example.backend.dto.response.UserPaymentStatsResponse;
 import com.example.backend.entity.PaymentMethod;
 import com.example.backend.entity.PaymentStatus;
 import com.example.backend.service.PaymentService;
@@ -119,6 +121,63 @@ public class PaymentController {
 
         return ResponseEntity.ok(
             paymentService.getMyPayments(userDetails.getUsername(), page, size));
+    }
+
+    /* ══════════════════════════════════════════════════════
+       PAYMENT-INFO  –  Thông tin thanh toán (lịch sử + thống kê cá nhân)
+    ══════════════════════════════════════════════════════ */
+
+    /**
+     * Lịch sử thanh toán đầy đủ (kèm thông tin booking) – dành cho trang payment-info.
+     *
+     * <p>Hỗ trợ filter: status, method, keyword, from, to với phân trang.
+     * Chỉ trả về giao dịch thuộc về người dùng hiện tại.</p>
+     */
+    @GetMapping("/payments/my/info")
+    public ResponseEntity<PagedResponse<PaymentInfoResponse>> getMyPaymentsInfo(
+            @RequestParam(required = false) PaymentStatus status,
+            @RequestParam(required = false) PaymentMethod method,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "8")  int size,
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        log.info("[API] GET /payments/my/info user={} status={} method={} keyword={}",
+            userDetails.getUsername(), status, method, keyword);
+
+        return ResponseEntity.ok(
+            paymentService.getMyPaymentsInfo(
+                userDetails.getUsername(),
+                status, method, keyword, from, to,
+                page, size));
+    }
+
+    /**
+     * Thống kê thanh toán cá nhân (4 stat-card trên trang payment-info).
+     *
+     * <p>Trả về: tổng GD, tổng tiêu, đang chờ, điểm tích lũy.</p>
+     */
+    @GetMapping("/payments/my/stats")
+    public ResponseEntity<UserPaymentStatsResponse> getMyPaymentStats(
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        log.info("[API] GET /payments/my/stats user={}", userDetails.getUsername());
+        return ResponseEntity.ok(paymentService.getMyPaymentStats(userDetails.getUsername()));
+    }
+
+    /**
+     * Chi tiết một giao dịch với đầy đủ thông tin booking – dành cho panel chi tiết payment-info.
+     */
+    @GetMapping("/payments/{paymentId}/info")
+    public ResponseEntity<PaymentInfoResponse> getPaymentInfo(
+            @PathVariable Long paymentId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        String email = userDetails != null ? userDetails.getUsername() : null;
+        log.info("[API] GET /payments/{}/info user={}", paymentId, email);
+        return ResponseEntity.ok(paymentService.getPaymentInfoById(paymentId, email));
     }
 
     /**
