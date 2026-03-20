@@ -44,6 +44,18 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET,  "/api/rooms").permitAll()
                 // Khách vãng lai xem dịch vụ bổ sung đang bán
                 .requestMatchers(HttpMethod.GET,  "/api/services").permitAll()
+                // ── Thanh toán ──
+                // Guest / walk-in được phép khởi tạo & xử lý thanh toán (không cần đăng nhập)
+                .requestMatchers(HttpMethod.POST, "/api/payments/initiate").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/payments/*/process").permitAll()
+                .requestMatchers(HttpMethod.GET,  "/api/payments/*").permitAll()
+                // Xác thực promo code – public
+                .requestMatchers(HttpMethod.POST, "/api/payments/promo/validate").permitAll()
+                .requestMatchers(HttpMethod.GET,  "/api/payments/promo/demo-codes").permitAll()
+                // Lấy payments theo booking – public (kiểm tra quyền trong service)
+                .requestMatchers(HttpMethod.GET,  "/api/bookings/*/payments").permitAll()
+                // Hủy payment – cho phép cả guest
+                .requestMatchers(HttpMethod.PATCH, "/api/payments/*/cancel").permitAll()
                 // Loyalty: user đăng nhập tự xem / đổi điểm
                 .requestMatchers("/api/loyalty/me", "/api/loyalty/me/**").authenticated()
                 // Loyalty admin: phân quyền tại @PreAuthorize trong Controller
