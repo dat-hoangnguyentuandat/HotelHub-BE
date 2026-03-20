@@ -83,4 +83,85 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
         @Param("from") LocalDate from,
         @Param("to")   LocalDate to
     );
+
+    /* ══════════════════════════════════════════════════════
+       PAYMENT-INFO – queries cho trang thông tin cá nhân
+    ══════════════════════════════════════════════════════ */
+
+    /**
+     * Lấy toàn bộ giao dịch của một user (theo email), sắp xếp mới nhất trước.
+     * Dùng cho trang payment-info khi cần filter phía backend.
+     */
+    @Query("""
+        SELECT p FROM Payment p
+        JOIN FETCH p.booking b
+        WHERE b.guestEmail = :email
+           OR (b.user IS NOT NULL AND b.user.email = :email)
+        ORDER BY p.createdAt DESC
+        """)
+    List<Payment> findAllByUserEmailWithBooking(@Param("email") String email);
+
+    /**
+     * Lấy giao dịch của user có phân trang + lọc trạng thái, phương thức, từ khoá và khoảng ngày.
+     */
+    @Query("""
+        SELECT p FROM Payment p
+        JOIN p.booking b
+        WHERE (b.guestEmail = :email OR (b.user IS NOT NULL AND b.user.email = :email))
+          AND (:status  IS NULL OR p.status  = :status)
+          AND (:method  IS NULL OR p.method  = :method)
+          AND (:keyword IS NULL OR :keyword  = ''
+               OR LOWER(p.transactionRef) LIKE LOWER(CONCAT('%',:keyword,'%'))
+               OR LOWER(b.roomType)       LIKE LOWER(CONCAT('%',:keyword,'%'))
+               OR LOWER(p.gatewayTransactionId) LIKE LOWER(CONCAT('%',:keyword,'%'))
+          )
+          AND (:from IS NULL OR CAST(p.createdAt AS date) >= :from)
+          AND (:to   IS NULL OR CAST(p.createdAt AS date) <= :to)
+        ORDER BY p.createdAt DESC
+        """)
+    Page<Payment> findByUserEmailFiltered(
+        @Param("email")   String email,
+        @Param("status")  PaymentStatus status,
+        @Param("method")  com.example.backend.entity.PaymentMethod method,
+        @Param("keyword") String keyword,
+        @Param("from")    LocalDate from,
+        @Param("to")      LocalDate to,
+        Pageable pageable
+    );
+
+    /**
+     * Đếm giao dịch theo trạng thái cho một user.
+     */
+    @Query("""
+        SELECT COUNT(p) FROM Payment p
+        JOIN p.booking b
+        WHERE (b.guestEmail = :email OR (b.user IS NOT NULL AND b.user.email = :email))
+          AND p.status = :status
+        """)
+    long countByUserEmailAndStatus(
+        @Param("email")  String email,
+        @Param("status") PaymentStatus status
+    );
+
+    /**
+     * Tổng tiền đã chi thành công của user.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(p.totalAmount), 0) FROM Payment p
+        JOIN p.booking b
+        WHERE (b.guestEmail = :email OR (b.user IS NOT NULL AND b.user.email = :email))
+          AND p.status = 'SUCCESS'
+        """)
+    java.math.BigDecimal sumSuccessAmountByUserEmail(@Param("email") String email);
+
+    /**
+     * Tổng điểm thưởng đã tích lũy của user.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(p.loyaltyPointsEarned), 0) FROM Payment p
+        JOIN p.booking b
+        WHERE (b.guestEmail = :email OR (b.user IS NOT NULL AND b.user.email = :email))
+          AND p.status = 'SUCCESS'
+        """)
+    long sumLoyaltyPointsEarnedByUserEmail(@Param("email") String email);
 }
