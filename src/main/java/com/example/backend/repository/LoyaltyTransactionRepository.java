@@ -39,4 +39,7 @@ public interface LoyaltyTransactionRepository extends JpaRepository<LoyaltyTrans
 
     /** Kiểm tra booking đã được tích điểm chưa */
     boolean existsByBookingId(Long bookingId);
+
+    /** Xoá toàn bộ transaction của 1 loyalty account (dùng khi xoá user) */
+    void deleteByLoyaltyAccountId(Long loyaltyAccountId);
 }
