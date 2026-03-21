@@ -10,6 +10,8 @@ import com.example.backend.dto.response.PromoValidateResponse;
 import com.example.backend.dto.response.UserPaymentStatsResponse;
 import com.example.backend.entity.PaymentMethod;
 import com.example.backend.entity.PaymentStatus;
+import com.example.backend.entity.PromoCode;
+import com.example.backend.repository.PromoCodeRepository;
 import com.example.backend.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -42,6 +45,7 @@ import java.util.Map;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final PromoCodeRepository promoCodeRepository;
 
     /* ══════════════════════════════════════════════════════
        CUSTOMER ENDPOINTS
@@ -208,16 +212,21 @@ public class PaymentController {
     }
 
     /**
-     * Tiện ích: lấy danh sách promo hợp lệ (chỉ để demo, thực tế không public).
+     * Admin: lấy danh sách mã promo đang hoạt động từ DB.
+     * Endpoint được bảo vệ bằng quyền ADMIN/HOTEL_OWNER.
      */
-    @GetMapping("/payments/promo/demo-codes")
-    public ResponseEntity<Map<String, String>> getDemoCodes() {
-        return ResponseEntity.ok(Map.of(
-            "HOTEL10",  "Giảm 10%",
-            "SUMMER20", "Giảm 20% Hè 2026",
-            "NEWGUEST", "Khách mới giảm 15%",
-            "VIP30",    "VIP giảm 30%"
-        ));
+    @GetMapping("/admin/payments/promo-codes")
+    @PreAuthorize("hasAnyRole('ADMIN','HOTEL_OWNER')")
+    public ResponseEntity<List<Map<String, Object>>> getPromoCodes() {
+        List<Map<String, Object>> codes = promoCodeRepository.findByActiveTrueOrderByCreatedAtDesc()
+            .stream()
+            .map(p -> Map.<String, Object>of(
+                "code",         p.getCode(),
+                "label",        p.getLabel(),
+                "discountRate", p.getDiscountRate()
+            ))
+            .toList();
+        return ResponseEntity.ok(codes);
     }
 
     /* ══════════════════════════════════════════════════════

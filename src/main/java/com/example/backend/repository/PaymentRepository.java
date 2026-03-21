@@ -164,4 +164,13 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
           AND p.status = 'SUCCESS'
         """)
     long sumLoyaltyPointsEarnedByUserEmail(@Param("email") String email);
+
+    /**
+     * Đếm số payment được tạo trong ngày hôm nay (dùng để tạo transactionRef không trùng sau restart).
+     */
+    @Query("""
+        SELECT COUNT(p) FROM Payment p
+        WHERE CAST(p.createdAt AS date) = :today
+        """)
+    long countCreatedOnDate(@Param("today") LocalDate today);
 }
