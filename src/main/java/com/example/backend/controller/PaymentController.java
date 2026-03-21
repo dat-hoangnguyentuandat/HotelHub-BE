@@ -2,16 +2,20 @@ package com.example.backend.controller;
 
 import com.example.backend.dto.request.PaymentRequest;
 import com.example.backend.dto.request.PromoValidateRequest;
+import com.example.backend.dto.response.BookingResponse;
 import com.example.backend.dto.response.PagedResponse;
 import com.example.backend.dto.response.PaymentInfoResponse;
 import com.example.backend.dto.response.PaymentResponse;
 import com.example.backend.dto.response.PaymentStatsResponse;
 import com.example.backend.dto.response.PromoValidateResponse;
 import com.example.backend.dto.response.UserPaymentStatsResponse;
+import com.example.backend.entity.CancellationPolicy;
 import com.example.backend.entity.PaymentMethod;
 import com.example.backend.entity.PaymentStatus;
 import com.example.backend.entity.PromoCode;
 import com.example.backend.repository.PromoCodeRepository;
+import com.example.backend.service.BookingService;
+import com.example.backend.service.CancellationService;
 import com.example.backend.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,11 +24,13 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -46,6 +52,8 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final PromoCodeRepository promoCodeRepository;
+    private final BookingService bookingService;
+    private final CancellationService cancellationService;
 
     /* ══════════════════════════════════════════════════════
        CUSTOMER ENDPOINTS
@@ -285,4 +293,89 @@ public class PaymentController {
         log.info("[API] POST /admin/payments/{}/refund reason={}", paymentId, reason);
         return ResponseEntity.ok(paymentService.adminRefundPayment(paymentId, reason));
     }
+
+    /**
+     * User: yêu cầu hoàn tiền (hủy booking và tạo cancellation request).
+     */
+    @PostMapping("/payments/{paymentId}/refund")
+    public ResponseEntity<BookingResponse> requestRefund(
+            @PathVariable Long paymentId,
+            @RequestBody(required = false) Map<String, String> body,
+            Authentication authentication) {
+
+        String reason = (body != null) ? body.getOrDefault("reason", "Yêu cầu hoàn tiền") : "Yêu cầu hoàn tiền";
+        String username = authentication.getName();
+        log.info("[API] POST /payments/{}/refund by user={} reason={}", paymentId, username, reason);
+        
+        // Lấy thông tin payment để tìm bookingId
+        PaymentResponse payment = paymentService.getPayment(paymentId, username);
+        Long bookingId = payment.getBookingId();
+        
+        // Hủy booking (sẽ tự động tạo cancellation request)
+        BookingResponse cancelledBooking = bookingService.cancelBooking(bookingId, username);
+        
+        log.info("[API] Booking {} cancelled successfully by user {}", bookingId, username);
+        return ResponseEntity.ok(cancelledBooking);
+    }
+
+    /**
+     * User: tính toán số tiền hoàn trước khi hủy (preview).
+     */
+    @GetMapping("/payments/{paymentId}/refund-preview")
+    public ResponseEntity<Map<String, Object>> getRefundPreview(
+            @PathVariable Long paymentId,
+            Authentication authentication) {
+
+        String username = authentication.getName();
+        log.info("[API] GET /payments/{}/refund-preview by user={}", paymentId, username);
+        
+        // Lấy thông tin payment và booking
+        PaymentResponse payment = paymentService.getPayment(paymentId, username);
+        BookingResponse booking = bookingService.getBookingById(payment.getBookingId());
+        
+        // Tính toán refund dựa trên chính sách
+        Map<String, Object> preview = new HashMap<>();
+        preview.put("paymentId", paymentId);
+        preview.put("bookingId", booking.getId());
+        preview.put("totalAmount", payment.getTotalAmount());
+        preview.put("checkInDate", booking.getCheckIn());
+        preview.put("policies", calculateRefundPolicies(booking, payment));
+        
+        return ResponseEntity.ok(preview);
+    }
+
+    private java.util.List<Map<String, Object>> calculateRefundPolicies(BookingResponse booking, PaymentResponse payment) {
+        java.util.List<Map<String, Object>> result = new java.util.ArrayList<>();
+        
+        // Lấy số giờ từ hiện tại đến ngày check-in
+        long hoursUntilCheckIn = java.time.temporal.ChronoUnit.HOURS.between(
+            java.time.LocalDateTime.now(), 
+            booking.getCheckIn().atStartOfDay()
+        );
+        
+        // Lấy chính sách từ database (đã được admin cấu hình)
+        java.util.List<CancellationPolicy> dbPolicies = cancellationService.getPolicies();
+        
+        // Sắp xếp theo minHours giảm dần
+        dbPolicies.sort((a, b) -> Integer.compare(b.getMinHours(), a.getMinHours()));
+        
+        // Tạo danh sách chính sách với trạng thái áp dụng
+        for (CancellationPolicy policy : dbPolicies) {
+            boolean isApplicable = hoursUntilCheckIn >= policy.getMinHours();
+            
+            Map<String, Object> policyMap = new HashMap<>();
+            policyMap.put("description", policy.getLabel());
+            policyMap.put("refundPercent", policy.getRefundRate());
+            policyMap.put("minHours", policy.getMinHours());
+            policyMap.put("refundAmount", payment.getTotalAmount()
+                .multiply(java.math.BigDecimal.valueOf(policy.getRefundRate()))
+                .divide(java.math.BigDecimal.valueOf(100)));
+            policyMap.put("isApplicable", isApplicable);
+            
+            result.add(policyMap);
+        }
+        
+        return result;
+    }
 }
+

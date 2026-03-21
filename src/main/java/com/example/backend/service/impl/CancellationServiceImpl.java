@@ -196,8 +196,22 @@ public class CancellationServiceImpl implements CancellationService {
                     "Không thể xóa yêu cầu đang chờ xử lý. Vui lòng xử lý trước khi xóa.");
         }
 
-        bookingRepository.delete(booking);
-        log.info("Deleted cancellation record for booking #{}", bookingId);
+        // Soft delete: Chỉ xóa thông tin cancellation, giữ lại booking
+        booking.setCancelReason(null);
+        booking.setCancelledAt(null);
+        booking.setRefundRate(null);
+        booking.setRefundAmount(null);
+        booking.setRefundStatus(null);
+        booking.setProcessNote(null);
+        booking.setAppliedPolicy(null);
+        
+        // Đổi status về CONFIRMED nếu chưa quá ngày check-in
+        if (booking.getCheckIn().isAfter(LocalDate.now())) {
+            booking.setStatus(BookingStatus.CONFIRMED);
+        }
+        
+        bookingRepository.save(booking);
+        log.info("Deleted cancellation record for booking #{} (soft delete)", bookingId);
     }
 
     /* ══════════════════════════════════════════════════════════════════
