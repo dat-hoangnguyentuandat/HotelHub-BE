@@ -64,6 +64,15 @@ public class SecurityConfig {
                 .requestMatchers("/api/loyalty/me", "/api/loyalty/me/**").authenticated()
                 // Loyalty admin: phân quyền tại @PreAuthorize trong Controller
                 .requestMatchers("/api/loyalty/admin/**").authenticated()
+                // ── Reviews ──
+                // Khách vãng lai được gửi review + xem review public
+                .requestMatchers(HttpMethod.POST, "/api/reviews").permitAll()
+                .requestMatchers(HttpMethod.GET,  "/api/reviews/booking/**").permitAll()
+                .requestMatchers(HttpMethod.GET,  "/api/reviews/room/**").permitAll()
+                // User đã đăng nhập xem review của mình
+                .requestMatchers(HttpMethod.GET,  "/api/reviews/my").authenticated()
+                // Admin quản lý review: phân quyền tại @PreAuthorize trong Controller
+                .requestMatchers("/api/admin/reviews/**").authenticated()
                 .anyRequest().authenticated()
             )
             .sessionManagement(session ->
