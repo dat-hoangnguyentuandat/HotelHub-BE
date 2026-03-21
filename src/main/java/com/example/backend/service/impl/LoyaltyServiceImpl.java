@@ -42,7 +42,7 @@ public class LoyaltyServiceImpl implements LoyaltyService {
        GET MY ACCOUNT
     ══════════════════════════════════════════════════════════════ */
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public LoyaltyAccountResponse getMyLoyaltyAccount(String email) {
         LoyaltyAccount account = getOrCreateAccount(email);
         return LoyaltyAccountResponse.from(account);
@@ -78,7 +78,7 @@ public class LoyaltyServiceImpl implements LoyaltyService {
        LỊCH SỬ GIAO DỊCH
     ══════════════════════════════════════════════════════════════ */
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public PagedResponse<LoyaltyTransactionResponse> getTransactionHistory(
             String email, TransactionType type, YearMonth month, int page, int size) {
 

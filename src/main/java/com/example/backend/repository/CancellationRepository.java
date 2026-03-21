@@ -27,6 +27,7 @@ public interface CancellationRepository extends JpaRepository<Booking, Long> {
     @Query("""
         SELECT b FROM Booking b
         WHERE b.status = 'CANCELLED'
+          AND b.refundStatus IS NOT NULL
           AND (:refundStatus IS NULL OR b.refundStatus = :refundStatus)
           AND (
                :keyword IS NULL OR :keyword = ''
@@ -51,11 +52,11 @@ public interface CancellationRepository extends JpaRepository<Booking, Long> {
     // ── Thống kê ────────────────────────────────────────────────────────
 
     /** Đếm theo refundStatus */
-    @Query("SELECT COUNT(b) FROM Booking b WHERE b.status = 'CANCELLED' AND b.refundStatus = :refundStatus")
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.status = 'CANCELLED' AND b.refundStatus IS NOT NULL AND b.refundStatus = :refundStatus")
     long countByRefundStatus(@Param("refundStatus") RefundStatus refundStatus);
 
     /** Tổng yêu cầu hủy */
-    @Query("SELECT COUNT(b) FROM Booking b WHERE b.status = 'CANCELLED'")
+    @Query("SELECT COUNT(b) FROM Booking b WHERE b.status = 'CANCELLED' AND b.refundStatus IS NOT NULL")
     long countAllCancellations();
 
     /** Tổng số tiền đã hoàn (chỉ trạng thái REFUNDED) */
@@ -71,6 +72,7 @@ public interface CancellationRepository extends JpaRepository<Booking, Long> {
     @Query("""
         SELECT b FROM Booking b
         WHERE b.status = 'CANCELLED'
+          AND b.refundStatus IS NOT NULL
           AND (:cancelFrom IS NULL OR b.cancelledAt >= :cancelFrom)
           AND (:cancelTo   IS NULL OR b.cancelledAt <= :cancelTo)
         ORDER BY b.cancelledAt DESC
