@@ -95,6 +95,25 @@ SELECT 'Trần Thị Mai', '0923456789', 'Yêu cầu đặc biệt khác',
 WHERE NOT EXISTS (SELECT 1 FROM special_requests WHERE guest_name = 'Trần Thị Mai' AND request_type = 'Yêu cầu đặc biệt khác');
 
 -- ═══════════════════════════════════════════════════════════════════
+-- PROMO CODES – Mã khuyến mãi mặc định
+-- ═══════════════════════════════════════════════════════════════════
+INSERT INTO promo_codes (code, label, discount_rate, active, created_at, updated_at)
+SELECT 'HOTEL10', 'Giảm 10%', 0.10, true, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM promo_codes WHERE code = 'HOTEL10');
+
+INSERT INTO promo_codes (code, label, discount_rate, active, created_at, updated_at)
+SELECT 'SUMMER20', 'Giảm 20% Hè 2026', 0.20, true, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM promo_codes WHERE code = 'SUMMER20');
+
+INSERT INTO promo_codes (code, label, discount_rate, active, created_at, updated_at)
+SELECT 'NEWGUEST', 'Khách mới giảm 15%', 0.15, true, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM promo_codes WHERE code = 'NEWGUEST');
+
+INSERT INTO promo_codes (code, label, discount_rate, active, created_at, updated_at)
+SELECT 'VIP30', 'VIP giảm 30%', 0.30, true, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM promo_codes WHERE code = 'VIP30');
+
+-- ═══════════════════════════════════════════════════════════════════
 -- CANCELLATION POLICIES – Chính sách hoàn tiền mặc định
 -- ═══════════════════════════════════════════════════════════════════
 INSERT INTO cancellation_policies (label, min_hours, refund_rate, display_order, created_at, updated_at)

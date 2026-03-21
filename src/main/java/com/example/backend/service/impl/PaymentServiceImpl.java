@@ -12,6 +12,7 @@ import com.example.backend.entity.*;
 import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.BookingRepository;
 import com.example.backend.repository.PaymentRepository;
+import com.example.backend.repository.PromoCodeRepository;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.service.PaymentService;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +33,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +43,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository  paymentRepository;
     private final BookingRepository  bookingRepository;
     private final UserRepository     userRepository;
+    private final PromoCodeRepository promoCodeRepository;
 
     /* ── VAT cố định 10% ── */
     private static final BigDecimal VAT_RATE = new BigDecimal("0.10");
@@ -50,26 +51,6 @@ public class PaymentServiceImpl implements PaymentService {
     /* ── Điểm thưởng: 1000 VND = 1 điểm; 1 điểm = 100 VND ── */
     private static final int    POINTS_PER_1000VND = 1;
     private static final int    VND_PER_POINT       = 100;
-
-    /* ── Counter nội bộ để tạo transactionRef ── */
-    private static final AtomicLong SEQ = new AtomicLong(1);
-
-    /* ══════════════════════════════════════════════════════
-       MÃ PROMO (hard-coded – thực tế lưu DB / Redis)
-    ══════════════════════════════════════════════════════ */
-    private static final Map<String, BigDecimal> PROMO_CODES = Map.of(
-        "HOTEL10",   new BigDecimal("0.10"),
-        "SUMMER20",  new BigDecimal("0.20"),
-        "NEWGUEST",  new BigDecimal("0.15"),
-        "VIP30",     new BigDecimal("0.30")
-    );
-
-    private static final Map<String, String> PROMO_LABELS = Map.of(
-        "HOTEL10",   "Giảm 10%",
-        "SUMMER20",  "Giảm 20% Hè 2026",
-        "NEWGUEST",  "Khách mới giảm 15%",
-        "VIP30",     "VIP giảm 30%"
-    );
 
     /* ══════════════════════════════════════════════════════
        1. INITIATE PAYMENT
@@ -364,32 +345,34 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional(readOnly = true)
     public PromoValidateResponse validatePromo(PromoValidateRequest req) {
         String code = req.getCode().toUpperCase().trim();
-        BigDecimal rate = PROMO_CODES.get(code);
 
-        if (rate == null) {
-            return PromoValidateResponse.builder()
+        return promoCodeRepository.findByCodeIgnoreCaseAndActiveTrue(code)
+            .map(promo -> {
+                BigDecimal rate = promo.getDiscountRate();
+
+                // Tính số tiền giảm nếu có bookingId
+                BigDecimal[] discountAmount = { BigDecimal.ZERO };
+                if (req.getBookingId() != null) {
+                    bookingRepository.findById(req.getBookingId()).ifPresent(b ->
+                        discountAmount[0] = b.getTotalAmount()
+                            .multiply(rate).setScale(0, RoundingMode.HALF_UP)
+                    );
+                }
+
+                return PromoValidateResponse.builder()
+                    .valid(true)
+                    .code(promo.getCode())
+                    .label(promo.getLabel())
+                    .discountRate(rate)
+                    .discountAmount(discountAmount[0])
+                    .message("Mã hợp lệ – " + promo.getLabel())
+                    .build();
+            })
+            .orElseGet(() -> PromoValidateResponse.builder()
                 .valid(false)
                 .code(code)
                 .message("Mã khuyến mãi không hợp lệ hoặc đã hết hạn")
-                .build();
-        }
-
-        // Tính số tiền giảm nếu có bookingId
-        BigDecimal discountAmount = BigDecimal.ZERO;
-        if (req.getBookingId() != null) {
-            bookingRepository.findById(req.getBookingId()).ifPresent(b ->
-                discountAmount.add(b.getTotalAmount().multiply(rate).setScale(0, RoundingMode.HALF_UP))
-            );
-        }
-
-        return PromoValidateResponse.builder()
-            .valid(true)
-            .code(code)
-            .label(PROMO_LABELS.getOrDefault(code, "Ưu đãi đặc biệt"))
-            .discountRate(rate)
-            .discountAmount(discountAmount)
-            .message("Mã hợp lệ – " + PROMO_LABELS.getOrDefault(code, "Ưu đãi đặc biệt"))
-            .build();
+                .build());
     }
 
     /* ══════════════════════════════════════════════════════
@@ -541,12 +524,15 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     /**
-     * Lấy tỉ lệ giảm giá từ promo code.
+     * Lấy tỉ lệ giảm giá từ promo code trong DB.
      * Ưu tiên code từ DB, nếu không hợp lệ dùng rate client gửi lên (tối đa 0.50).
      */
     private BigDecimal resolvePromoRate(String code, BigDecimal clientRate) {
         if (code != null && !code.isBlank()) {
-            BigDecimal dbRate = PROMO_CODES.get(code.toUpperCase().trim());
+            BigDecimal dbRate = promoCodeRepository
+                .findByCodeIgnoreCaseAndActiveTrue(code.trim())
+                .map(PromoCode::getDiscountRate)
+                .orElse(null);
             if (dbRate != null) return dbRate;
         }
         if (clientRate != null && clientRate.compareTo(BigDecimal.ZERO) > 0) {
@@ -566,10 +552,13 @@ public class PaymentServiceImpl implements PaymentService {
 
     /**
      * Tạo mã giao dịch nội bộ: HTH-YYYYMMDD-XXXX
+     * Dùng số lượng payment trong ngày từ DB để tránh trùng lặp sau khi restart server.
      */
     private String generateTransactionRef() {
-        String date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE); // 20260319
-        String seq  = String.format("%04d", SEQ.getAndIncrement());
+        LocalDate today = LocalDate.now();
+        String date = today.format(DateTimeFormatter.BASIC_ISO_DATE); // 20260319
+        long countToday = paymentRepository.countCreatedOnDate(today);
+        String seq = String.format("%04d", countToday + 1);
         return "HTH-" + date + "-" + seq;
     }
 
