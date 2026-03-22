@@ -23,6 +23,7 @@ public class RoomResponse {
     private boolean       maintenance;
     private Integer       floor;
     private List<String>  amenities;
+    private String        imageUrl;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -39,6 +40,7 @@ public class RoomResponse {
                 .maintenance(r.isMaintenance())
                 .floor(r.getFloor())
                 .amenities(r.getAmenitiesList())
+                .imageUrl(r.getImageUrl())
                 .createdAt(r.getCreatedAt())
                 .updatedAt(r.getUpdatedAt())
                 .build();

@@ -51,6 +51,10 @@ public class Room {
     @Column(columnDefinition = "TEXT")
     private String amenities;
 
+    /** URL ảnh đại diện của phòng */
+    @Column(length = 500)
+    private String imageUrl;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
