@@ -745,3 +745,46 @@ VALUES ('Voucher Ẩm Thực 150.000đ', 'Giảm 150.000đ cho dịch vụ ẩm 
 
 INSERT IGNORE INTO vouchers (name, description, points_required, value, code, category, active, max_redemptions, redeemed_count, created_at, updated_at)
 VALUES ('Voucher Đặc Biệt Tết', 'Voucher giảm 800.000đ dịp Tết Nguyên Đán', 8000, 800000, 'VOUCHERTET800K', 'Sự kiện', false, 5, 0, NOW(), NOW());
+
+
+-- ================================================================
+--  GROUP BOOKINGS – Đặt phòng khách đoàn mẫu
+-- ================================================================
+
+INSERT IGNORE INTO group_bookings (group_name, contact_person, contact_phone, contact_email, total_rooms, check_in, check_out, status, note, created_at, updated_at)
+VALUES ('Công ty Du lịch XYZ', 'Nguyễn Văn A', '0901234567', 'nguyenvana@xyz.com', 15, '2026-07-10', '2026-07-12', 'PENDING', 'Đoàn khách công ty, cần phòng họp buổi sáng', NOW(), NOW());
+
+INSERT IGNORE INTO group_bookings (group_name, contact_person, contact_phone, contact_email, total_rooms, check_in, check_out, status, note, created_at, updated_at)
+VALUES ('Doanh nghiệp ABC', 'Trần Thị B', '0912345678', 'tranthib@abc.com', 20, '2026-07-15', '2026-07-17', 'CONFIRMED', 'Hội nghị khách hàng, cần dịch vụ ăn uống cao cấp', NOW(), NOW());
+
+-- Phòng cho đoàn Công ty Du lịch XYZ
+INSERT IGNORE INTO group_booking_rooms (group_booking_id, guest_name, room_type, room_number, status, price, note, created_at, updated_at)
+VALUES (
+    (SELECT id FROM group_bookings WHERE group_name = 'Công ty Du lịch XYZ' LIMIT 1),
+    'Lê Văn Tâm', 'Deluxe', '101', 'BOOKED', 1200000, NULL, NOW(), NOW()
+);
+
+INSERT IGNORE INTO group_booking_rooms (group_booking_id, guest_name, room_type, room_number, status, price, note, created_at, updated_at)
+VALUES (
+    (SELECT id FROM group_bookings WHERE group_name = 'Công ty Du lịch XYZ' LIMIT 1),
+    'Phạm Thị Thảo', 'Superior', '202', 'BOOKED', 1500000, NULL, NOW(), NOW()
+);
+
+INSERT IGNORE INTO group_booking_rooms (group_booking_id, guest_name, room_type, room_number, status, price, note, created_at, updated_at)
+VALUES (
+    (SELECT id FROM group_bookings WHERE group_name = 'Công ty Du lịch XYZ' LIMIT 1),
+    'Hoàng Minh Khôi', 'Suite', '301', 'BOOKED', 3500000, 'Trưởng đoàn', NOW(), NOW()
+);
+
+-- Phòng cho đoàn Doanh nghiệp ABC
+INSERT IGNORE INTO group_booking_rooms (group_booking_id, guest_name, room_type, room_number, status, price, note, created_at, updated_at)
+VALUES (
+    (SELECT id FROM group_bookings WHERE group_name = 'Doanh nghiệp ABC' LIMIT 1),
+    'Đặng Quốc Bảo', 'Deluxe', '102', 'CHECKED_IN', 1200000, NULL, NOW(), NOW()
+);
+
+INSERT IGNORE INTO group_booking_rooms (group_booking_id, guest_name, room_type, room_number, status, price, note, created_at, updated_at)
+VALUES (
+    (SELECT id FROM group_bookings WHERE group_name = 'Doanh nghiệp ABC' LIMIT 1),
+    'Trần Ngọc Mai', 'Superior', '203', 'CHECKED_IN', 1500000, NULL, NOW(), NOW()
+);
