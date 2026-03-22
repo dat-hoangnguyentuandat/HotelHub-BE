@@ -14,6 +14,7 @@ import com.example.backend.repository.BookingRepository;
 import com.example.backend.repository.PaymentRepository;
 import com.example.backend.repository.PromoCodeRepository;
 import com.example.backend.repository.UserRepository;
+import com.example.backend.repository.UserVoucherRepository;
 import com.example.backend.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final BookingRepository  bookingRepository;
     private final UserRepository     userRepository;
     private final PromoCodeRepository promoCodeRepository;
+    private final UserVoucherRepository userVoucherRepository;
 
     /* ── VAT cố định 10% ── */
     private static final BigDecimal VAT_RATE = new BigDecimal("0.10");
@@ -82,8 +84,13 @@ public class PaymentServiceImpl implements PaymentService {
 
         // 5. Tính toán tiền
         BigDecimal subtotal = booking.getTotalAmount();      // = pricePerNight × nights × rooms
-        BigDecimal promoRate = resolvePromoRate(req.getPromoCode(), req.getPromoDiscountRate());
-        BigDecimal promoDiscount = subtotal.multiply(promoRate).setScale(0, RoundingMode.HALF_UP);
+
+        // Tính discount: hỗ trợ cả promo code (%) và voucher đổi điểm (tiền cố định)
+        BigDecimal[] promoResult = resolvePromoAndVoucherDiscount(
+            req.getPromoCode(), req.getPromoDiscountRate(), subtotal);
+        BigDecimal promoRate     = promoResult[0];
+        BigDecimal promoDiscount = promoResult[1];
+
         BigDecimal loyaltyDiscount = resolveLoyaltyDiscount(req.getLoyaltyPointsUsed());
 
         BigDecimal afterDiscount = subtotal.subtract(promoDiscount).subtract(loyaltyDiscount)
@@ -161,6 +168,19 @@ public class PaymentServiceImpl implements PaymentService {
             Booking booking = payment.getBooking();
             booking.setStatus(BookingStatus.CONFIRMED);
             bookingRepository.save(booking);
+
+            // Đánh dấu UserVoucher → USED (nếu đã dùng mã voucher đổi điểm)
+            if (payment.getPromoCode() != null && !payment.getPromoCode().isBlank()) {
+                userVoucherRepository
+                    .findByRedeemedCodeIgnoreCaseAndStatus(
+                        payment.getPromoCode(), UserVoucherStatus.ACTIVE)
+                    .ifPresent(uv -> {
+                        uv.setStatus(UserVoucherStatus.USED);
+                        userVoucherRepository.save(uv);
+                        log.info("[Payment] Voucher {} marked USED after SUCCESS paymentId={}",
+                            uv.getRedeemedCode(), payment.getId());
+                    });
+            }
 
             log.info("[Payment] SUCCESS paymentId={} bookingId={} pointsEarned={}",
                 payment.getId(), booking.getId(), pointsEarned);
@@ -345,12 +365,15 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional(readOnly = true)
     public PromoValidateResponse validatePromo(PromoValidateRequest req) {
         String code = req.getCode().toUpperCase().trim();
+        log.info("[validatePromo] Validating code: {}, bookingId: {}", code, req.getBookingId());
 
-        return promoCodeRepository.findByCodeIgnoreCaseAndActiveTrue(code)
-            .map(promo -> {
+        try {
+            // ── Bước 1: Tìm trong bảng promo_codes truyền thống ──
+            Optional<PromoCode> promoOpt = promoCodeRepository.findByCodeIgnoreCaseAndActiveTrue(code);
+            if (promoOpt.isPresent()) {
+                PromoCode promo = promoOpt.get();
                 BigDecimal rate = promo.getDiscountRate();
 
-                // Tính số tiền giảm nếu có bookingId
                 BigDecimal[] discountAmount = { BigDecimal.ZERO };
                 if (req.getBookingId() != null) {
                     bookingRepository.findById(req.getBookingId()).ifPresent(b ->
@@ -365,14 +388,57 @@ public class PaymentServiceImpl implements PaymentService {
                     .label(promo.getLabel())
                     .discountRate(rate)
                     .discountAmount(discountAmount[0])
+                    .isVoucher(false)
                     .message("Mã hợp lệ – " + promo.getLabel())
                     .build();
-            })
-            .orElseGet(() -> PromoValidateResponse.builder()
+            }
+
+            // ── Bước 2: Tìm trong bảng user_vouchers (mã voucher đổi điểm) ──
+            Optional<UserVoucher> uvOpt = userVoucherRepository
+                .findByRedeemedCodeIgnoreCaseAndStatus(code, UserVoucherStatus.ACTIVE);
+            if (uvOpt.isPresent()) {
+                UserVoucher uv = uvOpt.get();
+                Voucher voucher = uv.getVoucher();
+                BigDecimal voucherValue = BigDecimal.valueOf(voucher.getValue());
+
+                // Với voucher giảm tiền cố định, discountAmount = min(voucherValue, subtotal)
+                BigDecimal discountAmount = voucherValue;
+                if (req.getBookingId() != null) {
+                    Optional<Booking> bookingOpt = bookingRepository.findById(req.getBookingId());
+                    if (bookingOpt.isPresent()) {
+                        BigDecimal subtotal = bookingOpt.get().getTotalAmount();
+                        discountAmount = voucherValue.min(subtotal);
+                    }
+                }
+
+                return PromoValidateResponse.builder()
+                    .valid(true)
+                    .code(uv.getRedeemedCode())
+                    .label(voucher.getName())
+                    .discountRate(BigDecimal.ZERO)   // không giảm theo %
+                    .discountAmount(discountAmount)
+                    .isVoucher(true)
+                    .voucherValue(voucherValue)
+                    .message("Voucher hợp lệ – " + voucher.getName()
+                        + " (giảm " + String.format("%,d", voucher.getValue()) + "đ)")
+                    .build();
+            }
+
+            // ── Không tìm thấy ──
+            return PromoValidateResponse.builder()
                 .valid(false)
                 .code(code)
                 .message("Mã khuyến mãi không hợp lệ hoặc đã hết hạn")
-                .build());
+                .build();
+                
+        } catch (Exception e) {
+            log.error("[validatePromo] Error validating code: {}", code, e);
+            return PromoValidateResponse.builder()
+                .valid(false)
+                .code(code)
+                .message("Lỗi khi kiểm tra mã: " + e.getMessage())
+                .build();
+        }
     }
 
     /* ══════════════════════════════════════════════════════
@@ -524,9 +590,51 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     /**
+     * Lấy tỉ lệ giảm giá từ promo code HOẶC số tiền giảm từ voucher đổi điểm.
+     * Trả về BigDecimal[2]: [0] = discountRate (0.0-1.0), [1] = fixedDiscountAmount (VND)
+     * Ưu tiên: DB promo → DB user_voucher → client rate.
+     */
+    private BigDecimal[] resolvePromoAndVoucherDiscount(String code, BigDecimal clientRate, BigDecimal subtotal) {
+        // [0] = rate, [1] = fixed amount
+        if (code != null && !code.isBlank()) {
+            String trimmed = code.trim();
+
+            // Tìm trong promo_codes
+            BigDecimal dbRate = promoCodeRepository
+                .findByCodeIgnoreCaseAndActiveTrue(trimmed)
+                .map(PromoCode::getDiscountRate)
+                .orElse(null);
+            if (dbRate != null) {
+                BigDecimal promoDiscount = subtotal.multiply(dbRate).setScale(0, RoundingMode.HALF_UP);
+                return new BigDecimal[]{dbRate, promoDiscount};
+            }
+
+            // Tìm trong user_vouchers
+            Optional<UserVoucher> uvOpt = userVoucherRepository
+                .findByRedeemedCodeIgnoreCaseAndStatus(trimmed, UserVoucherStatus.ACTIVE);
+            if (uvOpt.isPresent()) {
+                BigDecimal voucherValue = BigDecimal.valueOf(uvOpt.get().getVoucher().getValue());
+                BigDecimal fixedDiscount = voucherValue.min(subtotal);  // không giảm vượt quá tổng tiền
+                return new BigDecimal[]{BigDecimal.ZERO, fixedDiscount};
+            }
+        }
+
+        // Fallback: dùng rate từ client (tối đa 50%)
+        if (clientRate != null && clientRate.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal rate = clientRate.min(new BigDecimal("0.50"));
+            BigDecimal promoDiscount = subtotal.multiply(rate).setScale(0, RoundingMode.HALF_UP);
+            return new BigDecimal[]{rate, promoDiscount};
+        }
+
+        return new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO};
+    }
+
+    /**
      * Lấy tỉ lệ giảm giá từ promo code trong DB.
      * Ưu tiên code từ DB, nếu không hợp lệ dùng rate client gửi lên (tối đa 0.50).
+     * @deprecated dùng resolvePromoAndVoucherDiscount thay thế
      */
+    @Deprecated
     private BigDecimal resolvePromoRate(String code, BigDecimal clientRate) {
         if (code != null && !code.isBlank()) {
             BigDecimal dbRate = promoCodeRepository
