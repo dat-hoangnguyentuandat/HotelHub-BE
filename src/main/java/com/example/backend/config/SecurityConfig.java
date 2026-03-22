@@ -73,6 +73,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET,  "/api/reviews/my").authenticated()
                 // Admin quản lý review: phân quyền tại @PreAuthorize trong Controller
                 .requestMatchers("/api/admin/reviews/**").authenticated()
+                // ── Yêu cầu đặc biệt từ user (public – không cần đăng nhập) ──
+                .requestMatchers(HttpMethod.POST, "/api/special-requests/public").permitAll()
                 .anyRequest().authenticated()
             )
             .sessionManagement(session ->

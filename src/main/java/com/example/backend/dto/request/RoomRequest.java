@@ -41,4 +41,7 @@ public class RoomRequest {
     private Integer floor;
 
     private List<String> amenities;
+
+    @Size(max = 500, message = "URL ảnh tối đa 500 ký tự")
+    private String imageUrl;
 }

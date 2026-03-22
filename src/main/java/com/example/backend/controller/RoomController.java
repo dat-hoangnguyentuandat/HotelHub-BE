@@ -90,6 +90,7 @@ public class RoomController {
                 .schedule(req.getSchedule())
                 .maintenance(req.isMaintenance())
                 .floor(req.getFloor())
+                .imageUrl(req.getImageUrl())
                 .build();
         room.setAmenitiesList(req.getAmenities());
 
@@ -116,6 +117,7 @@ public class RoomController {
         room.setSchedule(req.getSchedule());
         room.setMaintenance(req.isMaintenance());
         room.setFloor(req.getFloor());
+        room.setImageUrl(req.getImageUrl());
         room.setAmenitiesList(req.getAmenities());
 
         return ResponseEntity.ok(RoomResponse.from(roomRepository.save(room)));
