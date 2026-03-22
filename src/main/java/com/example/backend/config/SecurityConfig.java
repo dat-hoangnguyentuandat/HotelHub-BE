@@ -67,6 +67,8 @@ public class SecurityConfig {
                 // ── Reviews ──
                 // Khách vãng lai được gửi review + xem review public
                 .requestMatchers(HttpMethod.POST, "/api/reviews").permitAll()
+                .requestMatchers(HttpMethod.GET,  "/api/reviews/public").permitAll()
+                .requestMatchers(HttpMethod.GET,  "/api/reviews/public/**").permitAll()
                 .requestMatchers(HttpMethod.GET,  "/api/reviews/booking/**").permitAll()
                 .requestMatchers(HttpMethod.GET,  "/api/reviews/room/**").permitAll()
                 // User đã đăng nhập xem review của mình

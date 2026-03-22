@@ -26,6 +26,25 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
         String roomType, ReviewStatus status, Pageable pageable
     );
 
+    /* ── Tất cả review APPROVED (public, có lọc sao + keyword) ── */
+    @Query("""
+        SELECT r FROM Review r
+        JOIN r.booking b
+        WHERE r.status = 'APPROVED'
+          AND (:rating  IS NULL OR r.rating = :rating)
+          AND (:keyword IS NULL OR :keyword = ''
+               OR LOWER(b.guestName) LIKE LOWER(CONCAT('%', :keyword, '%'))
+               OR LOWER(r.title)     LIKE LOWER(CONCAT('%', :keyword, '%'))
+               OR LOWER(r.comment)   LIKE LOWER(CONCAT('%', :keyword, '%'))
+          )
+        ORDER BY r.createdAt DESC
+        """)
+    Page<Review> searchApprovedReviews(
+        @Param("rating")  Integer rating,
+        @Param("keyword") String  keyword,
+        Pageable pageable
+    );
+
     /* ════════════════════════════════════════════════════
        ADMIN – Tìm kiếm nâng cao
     ════════════════════════════════════════════════════ */

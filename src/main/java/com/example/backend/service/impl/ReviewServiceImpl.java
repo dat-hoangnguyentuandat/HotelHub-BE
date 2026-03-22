@@ -121,6 +121,48 @@ public class ReviewServiceImpl implements ReviewService {
         return toPagedResponse(p);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public PagedResponse<ReviewResponse> getApprovedReviews(Integer rating, String keyword, int page, int size) {
+        String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
+        Pageable pageable = PageRequest.of(page, size);
+        Page<Review> p = reviewRepository.searchApprovedReviews(rating, kw, pageable);
+        return toPagedResponse(p);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ReviewStatsResponse getPublicStats() {
+        long approved = reviewRepository.countByStatus(ReviewStatus.APPROVED);
+        long cnt5 = reviewRepository.countApprovedByStar(5);
+        long cnt4 = reviewRepository.countApprovedByStar(4);
+        long cnt3 = reviewRepository.countApprovedByStar(3);
+        long cnt2 = reviewRepository.countApprovedByStar(2);
+        long cnt1 = reviewRepository.countApprovedByStar(1);
+        double pctBase = (approved > 0) ? (double) approved : 1.0;
+
+        return ReviewStatsResponse.builder()
+                .totalReviews(approved)
+                .approvedCount(approved)
+                .pendingCount(0)
+                .rejectedCount(0)
+                .withReplyCount(0)
+                .responseRate(0)
+                .overallAvg(round2(reviewRepository.avgOverallRating()))
+                .pct5Star(round1(cnt5 * 100.0 / pctBase))
+                .pct4Star(round1(cnt4 * 100.0 / pctBase))
+                .pct3Star(round1(cnt3 * 100.0 / pctBase))
+                .pct2Star(round1(cnt2 * 100.0 / pctBase))
+                .pct1Star(round1(cnt1 * 100.0 / pctBase))
+                .avgRoom(round2(reviewRepository.avgRoomRating()))
+                .avgService(round2(reviewRepository.avgServiceRating()))
+                .avgLocation(round2(reviewRepository.avgLocationRating()))
+                .avgCleanliness(round2(reviewRepository.avgCleanlinessRating()))
+                .avgAmenities(round2(reviewRepository.avgAmenitiesRating()))
+                .avgValue(round2(reviewRepository.avgValueRating()))
+                .build();
+    }
+
     /* ══════════════════════════════════════════════════
        ADMIN – TÌM KIẾM
     ══════════════════════════════════════════════════ */
