@@ -46,6 +46,43 @@ public class ReviewController {
     }
 
     /**
+     * GET /api/reviews/public?rating=5&keyword=tốt&page=0&size=12
+     * Tất cả review đã duyệt – trang đánh giá công khai cho user.
+     */
+    @GetMapping("/reviews/public")
+    public ResponseEntity<PagedResponse<ReviewResponse>> getPublicReviews(
+            @RequestParam(required = false) Integer rating,
+            @RequestParam(required = false) String  keyword,
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "12") int size
+    ) {
+        return ResponseEntity.ok(
+                reviewService.getApprovedReviews(rating, keyword, page, size));
+    }
+
+    /**
+     * GET /api/reviews/public/stats
+     * Stats công khai (chỉ tính APPROVED) – hiển thị trên trang đánh giá user.
+     */
+    @GetMapping("/reviews/public/stats")
+    public ResponseEntity<ReviewStatsResponse> getPublicStats() {
+        return ResponseEntity.ok(reviewService.getPublicStats());
+    }
+
+    /**
+     * GET /api/reviews/public/{id}
+     * Chi tiết một review đã APPROVED (public – không cần auth).
+     */
+    @GetMapping("/reviews/public/{id}")
+    public ResponseEntity<ReviewResponse> getPublicById(@PathVariable Long id) {
+        ReviewResponse review = reviewService.getById(id);
+        if (review.getStatus() != ReviewStatus.APPROVED) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(review);
+    }
+
+    /**
      * GET /api/reviews/booking/{bookingId}
      * Xem review của một booking cụ thể (khách xem lại đánh giá của mình).
      */

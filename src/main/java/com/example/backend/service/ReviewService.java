@@ -26,6 +26,12 @@ public interface ReviewService {
     /** Review đã duyệt của một loại phòng (public). */
     PagedResponse<ReviewResponse> getApprovedByRoomType(String roomType, int page, int size);
 
+    /** Tất cả review đã duyệt (public – trang đánh giá user). */
+    PagedResponse<ReviewResponse> getApprovedReviews(Integer rating, String keyword, int page, int size);
+
+    /** Stats công khai (chỉ dựa trên APPROVED). */
+    ReviewStatsResponse getPublicStats();
+
     /* ══════════════════════════════════════════════════
        ADMIN
     ══════════════════════════════════════════════════ */

@@ -15,18 +15,21 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/admin/special-requests")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN') or hasRole('HOTEL_OWNER')")
 public class SpecialRequestController {
 
     private final SpecialRequestService service;
+
+    /* ══════════════════════════════════════════════════════════
+       ADMIN ENDPOINTS – Yêu cầu quyền ADMIN / HOTEL_OWNER
+    ══════════════════════════════════════════════════════════ */
 
     /**
      * GET /api/admin/special-requests
      * ?status=PENDING&keyword=check-in&page=0&size=10
      */
-    @GetMapping
+    @GetMapping("/api/admin/special-requests")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('HOTEL_OWNER')")
     public ResponseEntity<PagedResponse<SpecialRequestResponse>> getAll(
             @RequestParam(required = false) SpecialRequestStatus status,
             @RequestParam(required = false) String keyword,
@@ -38,9 +41,9 @@ public class SpecialRequestController {
 
     /**
      * GET /api/admin/special-requests/stats
-     * Trả về số lượng theo từng trạng thái.
      */
-    @GetMapping("/stats")
+    @GetMapping("/api/admin/special-requests/stats")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('HOTEL_OWNER')")
     public ResponseEntity<Map<String, Long>> getStats() {
         return ResponseEntity.ok(service.getStats());
     }
@@ -48,16 +51,18 @@ public class SpecialRequestController {
     /**
      * GET /api/admin/special-requests/{id}
      */
-    @GetMapping("/{id}")
+    @GetMapping("/api/admin/special-requests/{id}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('HOTEL_OWNER')")
     public ResponseEntity<SpecialRequestResponse> getById(@PathVariable Long id) {
         return ResponseEntity.ok(service.getById(id));
     }
 
     /**
      * POST /api/admin/special-requests
-     * Tạo mới yêu cầu đặc biệt.
+     * Admin tạo yêu cầu trực tiếp từ panel.
      */
-    @PostMapping
+    @PostMapping("/api/admin/special-requests")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('HOTEL_OWNER')")
     public ResponseEntity<SpecialRequestResponse> create(
             @Valid @RequestBody SpecialRequestRequest request
     ) {
@@ -68,7 +73,8 @@ public class SpecialRequestController {
      * PATCH /api/admin/special-requests/{id}/status
      * Body: { "status": "APPROVED", "adminNote": "..." }
      */
-    @PatchMapping("/{id}/status")
+    @PatchMapping("/api/admin/special-requests/{id}/status")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('HOTEL_OWNER')")
     public ResponseEntity<SpecialRequestResponse> updateStatus(
             @PathVariable Long id,
             @RequestBody Map<String, String> body
@@ -81,9 +87,11 @@ public class SpecialRequestController {
     /**
      * DELETE /api/admin/special-requests/{id}
      */
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/api/admin/special-requests/{id}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('HOTEL_OWNER')")
     public ResponseEntity<Map<String, String>> delete(@PathVariable Long id) {
         service.delete(id);
         return ResponseEntity.ok(Map.of("message", "Đã xoá yêu cầu #" + id));
     }
 }
+
