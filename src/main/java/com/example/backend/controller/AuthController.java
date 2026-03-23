@@ -10,6 +10,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -26,5 +28,15 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<AuthResponse> googleLogin(@RequestBody Map<String, String> body) {
+        String credential = body.get("credential");
+        if (credential == null || credential.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        AuthResponse response = authService.googleLogin(credential);
+        return ResponseEntity.ok(response);
     }
 }

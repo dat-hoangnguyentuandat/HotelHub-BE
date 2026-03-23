@@ -9,11 +9,20 @@ import com.example.backend.dto.response.PaymentResponse;
 import com.example.backend.dto.response.PaymentStatsResponse;
 import com.example.backend.dto.response.PromoValidateResponse;
 import com.example.backend.dto.response.UserPaymentStatsResponse;
+import com.example.backend.dto.response.UserVoucherResponse;
+import com.example.backend.dto.response.VoucherResponse;
 import com.example.backend.entity.CancellationPolicy;
 import com.example.backend.entity.PaymentMethod;
 import com.example.backend.entity.PaymentStatus;
 import com.example.backend.entity.PromoCode;
+import com.example.backend.entity.User;
+import com.example.backend.entity.UserVoucher;
+import com.example.backend.entity.UserVoucherStatus;
+import com.example.backend.entity.Voucher;
 import com.example.backend.repository.PromoCodeRepository;
+import com.example.backend.repository.UserRepository;
+import com.example.backend.repository.UserVoucherRepository;
+import com.example.backend.repository.VoucherRepository;
 import com.example.backend.service.BookingService;
 import com.example.backend.service.CancellationService;
 import com.example.backend.service.PaymentService;
@@ -30,9 +39,13 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * PaymentController – REST API chức năng thanh toán trực tuyến.
@@ -54,6 +67,9 @@ public class PaymentController {
     private final PromoCodeRepository promoCodeRepository;
     private final BookingService bookingService;
     private final CancellationService cancellationService;
+    private final VoucherRepository voucherRepository;
+    private final UserVoucherRepository userVoucherRepository;
+    private final UserRepository userRepository;
 
     /* ══════════════════════════════════════════════════════
        CUSTOMER ENDPOINTS
@@ -295,27 +311,178 @@ public class PaymentController {
     }
 
     /**
-     * User: yêu cầu hoàn tiền (hủy booking và tạo cancellation request).
+     * User: yêu cầu hoàn tiền.
+     * Body: { "reason": "...", "refundType": "CASH" | "VOUCHER" }
+     * - CASH (mặc định): hủy booking, tạo cancellation request xử lý sau.
+     * - VOUCHER: cấp voucher tương ứng ngay lập tức, đánh dấu payment REFUNDED.
      */
     @PostMapping("/payments/{paymentId}/refund")
-    public ResponseEntity<BookingResponse> requestRefund(
+    public ResponseEntity<?> requestRefund(
             @PathVariable Long paymentId,
             @RequestBody(required = false) Map<String, String> body,
             Authentication authentication) {
 
-        String reason = (body != null) ? body.getOrDefault("reason", "Yêu cầu hoàn tiền") : "Yêu cầu hoàn tiền";
+        String reason     = (body != null) ? body.getOrDefault("reason",     "Yêu cầu hoàn tiền") : "Yêu cầu hoàn tiền";
+        String refundType = (body != null) ? body.getOrDefault("refundType", "CASH").toUpperCase() : "CASH";
+        String username   = authentication.getName();
+
+        if ("VOUCHER".equals(refundType)) {
+            // ── Hoàn tiền bằng voucher ──────────────────────────────────────
+            // 1. Lấy thông tin payment & tính refundAmount
+            PaymentResponse payment = paymentService.getPayment(paymentId, username);
+            BookingResponse booking = bookingService.getBookingById(payment.getBookingId());
+            long refundAmount = calculateApplicableRefundAmount(booking, payment);
+
+            // 2. Tìm voucher phù hợp
+            List<Voucher> suggested = suggestVouchersForAmount(refundAmount);
+            
+            if (suggested.isEmpty()) {
+                return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Không tìm thấy voucher phù hợp để đổi"));
+            }
+
+            // 3. Lấy User entity
+            User user = userRepository.findByEmail(username)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy user: " + username));
+
+            // 4. Cấp UserVoucher (không trừ điểm – đây là bồi hoàn)
+            List<UserVoucherResponse> issued = new ArrayList<>();
+            for (Voucher v : suggested) {
+                String uniqueCode = v.getCode() + "-RF-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+                UserVoucher uv = UserVoucher.builder()
+                    .user(user)
+                    .voucher(v)
+                    .pointsSpent(0)
+                    .redeemedCode(uniqueCode)
+                    .status(UserVoucherStatus.ACTIVE)
+                    .build();
+                userVoucherRepository.save(uv);
+                v.setRedeemedCount(v.getRedeemedCount() + 1);
+                voucherRepository.save(v);
+                issued.add(UserVoucherResponse.from(uv));
+            }
+
+            // 5. Hủy booking và đánh dấu payment REFUNDED
+            bookingService.cancelBooking(booking.getId(), username);
+
+            return ResponseEntity.ok(Map.of(
+                "refundType", "VOUCHER",
+                "vouchers",   issued,
+                "totalVoucherValue", suggested.stream().mapToLong(Voucher::getValue).sum()
+            ));
+        } else {
+            // ── Hoàn tiền tiền mặt (flow gốc) ──────────────────────────────
+            PaymentResponse payment = paymentService.getPayment(paymentId, username);
+            Long bookingId = payment.getBookingId();
+            BookingResponse cancelledBooking = bookingService.cancelBooking(bookingId, username);
+            return ResponseEntity.ok(cancelledBooking);
+        }
+    }
+
+    /**
+     * GET /payments/{paymentId}/refund-voucher-suggestion
+     * Trả về danh sách voucher được gợi ý tương ứng với số tiền hoàn theo chính sách.
+     */
+    @GetMapping("/payments/{paymentId}/refund-voucher-suggestion")
+    public ResponseEntity<Map<String, Object>> getRefundVoucherSuggestion(
+            @PathVariable Long paymentId,
+            Authentication authentication) {
+
         String username = authentication.getName();
-        log.info("[API] POST /payments/{}/refund by user={} reason={}", paymentId, username, reason);
-        
-        // Lấy thông tin payment để tìm bookingId
+
         PaymentResponse payment = paymentService.getPayment(paymentId, username);
-        Long bookingId = payment.getBookingId();
+        BookingResponse booking = bookingService.getBookingById(payment.getBookingId());
+
+        long refundAmount = calculateApplicableRefundAmount(booking, payment);
+
+        // Nếu không tính được tiền hoàn theo policy (check-in đã qua, policy = 0%,
+        // hoặc chưa cấu hình policy), dùng toàn bộ totalAmount làm cơ sở gợi ý
+        // để người dùng vẫn có thể chọn voucher thay thế hoàn tiền mặt.
+        long suggestionBasis = refundAmount > 0
+                ? refundAmount
+                : payment.getTotalAmount().longValue();
+
+        List<Voucher> suggested = suggestVouchersForAmount(suggestionBasis);
+        long totalVoucherValue  = suggested.stream().mapToLong(Voucher::getValue).sum();
+
+        List<Map<String, Object>> voucherList = new ArrayList<>();
+        for (Voucher v : suggested) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id",          v.getId());
+            m.put("name",        v.getName());
+            m.put("description", v.getDescription());
+            m.put("value",       v.getValue());
+            m.put("category",    v.getCategory());
+            voucherList.add(m);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("refundAmount",      refundAmount);
+        result.put("totalVoucherValue", totalVoucherValue);
+        result.put("vouchers",          voucherList);
+        result.put("available",         !suggested.isEmpty());
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Thuật toán greedy gợi ý voucher phù hợp với số tiền hoàn.
+     * Ưu tiên: tìm voucher đơn có giá trị gần nhất (lớn hơn hoặc bằng).
+     * Nếu không có, kết hợp nhiều voucher lớn nhất cho đến khi tổng >= refundAmount.
+     */
+    private List<Voucher> suggestVouchersForAmount(long refundAmount) {
+        if (refundAmount <= 0) {
+            return List.of();
+        }
+
+        List<Voucher> available = voucherRepository.findByActiveTrueOrderByValueDesc().stream()
+            .filter(v -> v.getMaxRedemptions() == null || v.getRedeemedCount() < v.getMaxRedemptions())
+            .toList();
+
+        if (available.isEmpty()) {
+            return List.of();
+        }
+
+        // Thử tìm voucher đơn có giá trị >= refundAmount (lấy nhỏ nhất trong số đó)
+        Optional<Voucher> exactOrAbove = available.stream()
+            .filter(v -> v.getValue() >= refundAmount)
+            .min(Comparator.comparingLong(Voucher::getValue));
+        if (exactOrAbove.isPresent()) {
+            return List.of(exactOrAbove.get());
+        }
+
+        // Không có voucher đơn đủ lớn → gộp greedy từ lớn đến nhỏ
+        List<Voucher> selected = new ArrayList<>();
+        long accumulated = 0;
+        for (Voucher v : available) {
+            selected.add(v);
+            accumulated += v.getValue();
+            if (accumulated >= refundAmount) break;
+        }
         
-        // Hủy booking (sẽ tự động tạo cancellation request)
-        BookingResponse cancelledBooking = bookingService.cancelBooking(bookingId, username);
-        
-        log.info("[API] Booking {} cancelled successfully by user {}", bookingId, username);
-        return ResponseEntity.ok(cancelledBooking);
+        return selected;
+    }
+
+    /**
+     * Tính số tiền hoàn tiền thực tế theo chính sách áp dụng.
+     */
+    private long calculateApplicableRefundAmount(BookingResponse booking, PaymentResponse payment) {
+        java.util.List<CancellationPolicy> dbPolicies = cancellationService.getPolicies();
+        if (dbPolicies.isEmpty()) return 0L;
+
+        long hoursUntilCheckIn = java.time.temporal.ChronoUnit.HOURS.between(
+            java.time.LocalDateTime.now(),
+            booking.getCheckIn().atStartOfDay()
+        );
+
+        dbPolicies.sort((a, b) -> Integer.compare(b.getMinHours(), a.getMinHours()));
+        CancellationPolicy applicable = dbPolicies.stream()
+            .filter(p -> hoursUntilCheckIn >= p.getMinHours())
+            .findFirst()
+            .orElse(dbPolicies.get(dbPolicies.size() - 1));
+
+        double refundRate = applicable.getRefundRate() / 100.0;
+        return Math.round(payment.getTotalAmount().doubleValue() * refundRate);
     }
 
     /**
@@ -327,7 +494,6 @@ public class PaymentController {
             Authentication authentication) {
 
         String username = authentication.getName();
-        log.info("[API] GET /payments/{}/refund-preview by user={}", paymentId, username);
         
         // Lấy thông tin payment và booking
         PaymentResponse payment = paymentService.getPayment(paymentId, username);
@@ -359,9 +525,23 @@ public class PaymentController {
         // Sắp xếp theo minHours giảm dần
         dbPolicies.sort((a, b) -> Integer.compare(b.getMinHours(), a.getMinHours()));
         
+        // Tìm policy áp dụng (policy có minHours lớn nhất mà <= hoursUntilCheckIn)
+        CancellationPolicy applicablePolicy = null;
+        for (CancellationPolicy policy : dbPolicies) {
+            if (hoursUntilCheckIn >= policy.getMinHours()) {
+                applicablePolicy = policy;
+                break; // Đã sort giảm dần nên policy đầu tiên thỏa mãn là policy tốt nhất
+            }
+        }
+        
+        // Nếu không tìm thấy (hoursUntilCheckIn < 0), lấy policy có minHours nhỏ nhất
+        if (applicablePolicy == null && !dbPolicies.isEmpty()) {
+            applicablePolicy = dbPolicies.get(dbPolicies.size() - 1);
+        }
+        
         // Tạo danh sách chính sách với trạng thái áp dụng
         for (CancellationPolicy policy : dbPolicies) {
-            boolean isApplicable = hoursUntilCheckIn >= policy.getMinHours();
+            boolean isApplicable = (applicablePolicy != null && policy.getId().equals(applicablePolicy.getId()));
             
             Map<String, Object> policyMap = new HashMap<>();
             policyMap.put("description", policy.getLabel());

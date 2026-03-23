@@ -788,3 +788,29 @@ VALUES (
     (SELECT id FROM group_bookings WHERE group_name = 'Doanh nghiệp ABC' LIMIT 1),
     'Trần Ngọc Mai', 'Superior', '203', 'CHECKED_IN', 1500000, NULL, NOW(), NOW()
 );
+
+
+-- ================================================================
+--  VOUCHERS BỔ SUNG - Cho refund voucher
+-- ================================================================
+
+-- Thêm voucher nhỏ để dễ test refund
+INSERT IGNORE INTO vouchers (name, description, points_required, value, code, category, active, max_redemptions, redeemed_count, created_at, updated_at)
+VALUES ('Voucher Hoàn Tiền 100K', 'Voucher hoàn tiền 100.000đ', 0, 100000, 'REFUND100K', 'Hoàn tiền', true, 1000, 0, NOW(), NOW());
+
+INSERT IGNORE INTO vouchers (name, description, points_required, value, code, category, active, max_redemptions, redeemed_count, created_at, updated_at)
+VALUES ('Voucher Hoàn Tiền 500K', 'Voucher hoàn tiền 500.000đ', 0, 500000, 'REFUND500K', 'Hoàn tiền', true, 1000, 0, NOW(), NOW());
+
+INSERT IGNORE INTO vouchers (name, description, points_required, value, code, category, active, max_redemptions, redeemed_count, created_at, updated_at)
+VALUES ('Voucher Hoàn Tiền 1M', 'Voucher hoàn tiền 1.000.000đ', 0, 1000000, 'REFUND1M', 'Hoàn tiền', true, 1000, 0, NOW(), NOW());
+
+INSERT IGNORE INTO vouchers (name, description, points_required, value, code, category, active, max_redemptions, redeemed_count, created_at, updated_at)
+VALUES ('Voucher Hoàn Tiền 1.5M', 'Voucher hoàn tiền 1.500.000đ', 0, 1500000, 'REFUND1M5', 'Hoàn tiền', true, 1000, 0, NOW(), NOW());
+
+-- ================================================================
+-- CANCELLATION POLICIES – Chính sách hoàn tiền
+-- Chỉ insert nếu chưa có chính sách nào (để không ghi đè cấu hình admin)
+-- ================================================================
+INSERT INTO cancellation_policies (label, min_hours, refund_rate, display_order, created_at, updated_at)
+SELECT 'Hủy trong vòng 24 giờ: hoàn 100%', 0, 100, 1, NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM cancellation_policies LIMIT 1);
