@@ -15,6 +15,9 @@ public interface VoucherRepository extends JpaRepository<Voucher, Long> {
     /** Danh sách voucher đang active để khách đổi điểm */
     List<Voucher> findByActiveTrueOrderByPointsRequiredAsc();
 
+    /** Danh sách voucher đang active sắp xếp theo value DESC – dùng cho thuật toán gợi ý hoàn tiền */
+    List<Voucher> findByActiveTrueOrderByValueDesc();
+
     /** Tìm theo id và active */
     Optional<Voucher> findByIdAndActiveTrue(Long id);
 

@@ -83,6 +83,50 @@ public class AuthServiceImpl implements AuthService {
         return buildAuthResponse(token, user);
     }
 
+    @Override
+    public AuthResponse googleLogin(String credential) {
+        try {
+            // Verify Google ID token
+            com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier verifier =
+                new com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier.Builder(
+                    new com.google.api.client.http.javanet.NetHttpTransport(),
+                    new com.google.api.client.json.gson.GsonFactory())
+                .setAudience(java.util.Collections.singletonList(
+                    "164996972338-922radebsfu7b6qi9njabqi3e30asf67.apps.googleusercontent.com"))
+                .build();
+
+            com.google.api.client.googleapis.auth.oauth2.GoogleIdToken idToken = verifier.verify(credential);
+            if (idToken == null) {
+                throw new RuntimeException("Invalid Google ID token");
+            }
+
+            com.google.api.client.googleapis.auth.oauth2.GoogleIdToken.Payload payload = idToken.getPayload();
+            String email = payload.getEmail();
+            String name = (String) payload.get("name");
+            
+            // Check if user exists
+            User user = userRepository.findByEmail(email).orElse(null);
+            
+            if (user == null) {
+                // Create new user
+                user = User.builder()
+                    .fullName(name)
+                    .email(email)
+                    .password(passwordEncoder.encode(java.util.UUID.randomUUID().toString())) // Random password
+                    .role(Role.GUEST)
+                    .build();
+                user = userRepository.save(user);
+            }
+            
+            // Generate JWT and return response
+            String token = generateToken(user);
+            return buildAuthResponse(token, user);
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Google authentication failed: " + e.getMessage());
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private String generateToken(User user) {

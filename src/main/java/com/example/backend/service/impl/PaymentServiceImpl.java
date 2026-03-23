@@ -15,6 +15,7 @@ import com.example.backend.repository.PaymentRepository;
 import com.example.backend.repository.PromoCodeRepository;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.repository.UserVoucherRepository;
+import com.example.backend.service.LoyaltyService;
 import com.example.backend.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,13 +47,13 @@ public class PaymentServiceImpl implements PaymentService {
     private final UserRepository     userRepository;
     private final PromoCodeRepository promoCodeRepository;
     private final UserVoucherRepository userVoucherRepository;
+    private final LoyaltyService loyaltyService;
 
     /* ── VAT cố định 10% ── */
     private static final BigDecimal VAT_RATE = new BigDecimal("0.10");
 
-    /* ── Điểm thưởng: 1000 VND = 1 điểm; 1 điểm = 100 VND ── */
-    private static final int    POINTS_PER_1000VND = 1;
-    private static final int    VND_PER_POINT       = 100;
+    /* ── Điểm thưởng: 1 điểm / 100,000 VND (thống nhất với LoyaltyService) ── */
+    private static final BigDecimal POINTS_PER_UNIT = BigDecimal.valueOf(100_000);
 
     /* ══════════════════════════════════════════════════════
        1. INITIATE PAYMENT
@@ -158,14 +159,26 @@ public class PaymentServiceImpl implements PaymentService {
             payment.setGatewayResponseCode("00");
             payment.setGatewayMessage("Giao dịch thành công");
 
-            // Tích điểm thưởng (1 điểm / 1000 VND)
+            // Tích điểm thưởng (1 điểm / 100,000 VND)
             int pointsEarned = payment.getTotalAmount()
-                .divide(BigDecimal.valueOf(1000), RoundingMode.FLOOR).intValue()
-                * POINTS_PER_1000VND;
+                .divide(POINTS_PER_UNIT, 0, RoundingMode.FLOOR)
+                .intValue();
             payment.setLoyaltyPointsEarned(pointsEarned);
 
-            // Cập nhật trạng thái booking → CONFIRMED
+            // Cộng điểm vào tài khoản loyalty của user (nếu có)
             Booking booking = payment.getBooking();
+            if (booking.getUser() != null && pointsEarned > 0) {
+                try {
+                    loyaltyService.earnPointsForBooking(booking.getId());
+                    log.info("[Payment] Earned {} loyalty points for user {} from booking #{}",
+                        pointsEarned, booking.getUser().getEmail(), booking.getId());
+                } catch (Exception e) {
+                    log.warn("[Payment] Failed to add loyalty points for booking #{}: {}",
+                        booking.getId(), e.getMessage());
+                }
+            }
+
+            // Cập nhật trạng thái booking → CONFIRMED
             booking.setStatus(BookingStatus.CONFIRMED);
             bookingRepository.save(booking);
 
@@ -651,11 +664,11 @@ public class PaymentServiceImpl implements PaymentService {
 
     /**
      * Tính số tiền giảm từ điểm loyalty.
-     * 1 điểm = 100 VND
+     * 1 điểm = 100 VND (theo quy định chung)
      */
     private BigDecimal resolveLoyaltyDiscount(int points) {
         if (points <= 0) return BigDecimal.ZERO;
-        return BigDecimal.valueOf((long) points * VND_PER_POINT);
+        return BigDecimal.valueOf((long) points * 100);  // 1 điểm = 100 VND
     }
 
     /**
