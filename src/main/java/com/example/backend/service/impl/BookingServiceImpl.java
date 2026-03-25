@@ -256,7 +256,6 @@ public class BookingServiceImpl implements BookingService {
                 .last(p.isLast())
                 .build();
     }
-}
 
     /* ───────────────────────────────────────────────────────────────
        HELPER – TÍNH HOÀN TIỀN THEO POLICY
@@ -313,3 +312,4 @@ public class BookingServiceImpl implements BookingService {
 
     /** Helper record để trả về kết quả tính refund */
     private record PolicyCalculation(int rate, BigDecimal amount, String policyLabel) {}
+}
