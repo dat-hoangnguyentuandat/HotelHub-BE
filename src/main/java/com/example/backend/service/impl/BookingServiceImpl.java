@@ -276,20 +276,11 @@ public class BookingServiceImpl implements BookingService {
                 booking.getCheckIn().atStartOfDay()
         );
 
-        // Mặc định: không có policy nào khớp → 0%
-        int     bestRate  = 0;
-        String  bestLabel = "Hủy trong ngày không hoàn (0%)";
-
-        for (CancellationPolicy p : policies) {
-            if (hoursUntilCheckIn >= p.getMinHours()) {
-                bestRate  = p.getRefundRate();
-                bestLabel = p.getLabel();
-                break; // danh sách đã sắp xếp giảm dần → match đầu tiên là tốt nhất
-            }
-        }
-
         // Nếu chưa có policy nào trong DB, dùng policy mặc định đơn giản
         if (policies.isEmpty()) {
+            int     bestRate;
+            String  bestLabel;
+            
             if (hoursUntilCheckIn >= 48) {
                 bestRate  = 100;
                 bestLabel = "Hủy trước 48h hoàn 100%";
@@ -298,16 +289,31 @@ public class BookingServiceImpl implements BookingService {
                 bestLabel = "Hủy trước 24h hoàn 50%";
             } else {
                 bestRate  = 0;
-                bestLabel = "Hủy trong ngày không hoàn (0%)";
+                bestLabel = "Không đủ điều kiện hoàn tiền";
+            }
+            
+            BigDecimal total  = booking.getTotalAmount() != null ? booking.getTotalAmount() : BigDecimal.ZERO;
+            BigDecimal amount = total
+                    .multiply(BigDecimal.valueOf(bestRate))
+                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+
+            return new PolicyCalculation(bestRate, amount, bestLabel);
+        }
+
+        // Tìm policy phù hợp
+        for (CancellationPolicy p : policies) {
+            if (hoursUntilCheckIn >= p.getMinHours()) {
+                BigDecimal total  = booking.getTotalAmount() != null ? booking.getTotalAmount() : BigDecimal.ZERO;
+                BigDecimal amount = total
+                        .multiply(BigDecimal.valueOf(p.getRefundRate()))
+                        .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+                
+                return new PolicyCalculation(p.getRefundRate(), amount, p.getLabel());
             }
         }
 
-        BigDecimal total  = booking.getTotalAmount() != null ? booking.getTotalAmount() : BigDecimal.ZERO;
-        BigDecimal amount = total
-                .multiply(BigDecimal.valueOf(bestRate))
-                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
-
-        return new PolicyCalculation(bestRate, amount, bestLabel);
+        // Không có policy nào khớp → không hoàn tiền
+        return new PolicyCalculation(0, BigDecimal.ZERO, "Không đủ điều kiện hoàn tiền");
     }
 
     /** Helper record để trả về kết quả tính refund */
