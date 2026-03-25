@@ -6,9 +6,12 @@ import com.example.backend.dto.response.BookingResponse;
 import com.example.backend.dto.response.PagedResponse;
 import com.example.backend.entity.Booking;
 import com.example.backend.entity.BookingStatus;
+import com.example.backend.entity.CancellationPolicy;
+import com.example.backend.entity.RefundStatus;
 import com.example.backend.entity.User;
 import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.BookingRepository;
+import com.example.backend.repository.CancellationPolicyRepository;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.service.BookingService;
 import com.example.backend.service.LoyaltyService;
@@ -23,7 +26,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -35,6 +40,7 @@ public class BookingServiceImpl implements BookingService {
     private final BookingRepository bookingRepository;
     private final UserRepository    userRepository;
     private final LoyaltyService    loyaltyService;
+    private final CancellationPolicyRepository policyRepository;
 
 
     /* ───────────────────────────────────────────────────────────────
@@ -120,8 +126,23 @@ public class BookingServiceImpl implements BookingService {
             throw new IllegalStateException("Không thể huỷ booking ở trạng thái " + booking.getStatus());
         }
 
+        // Tính refund theo policy
+        PolicyCalculation calc = calculateRefund(booking);
+
+        // Cập nhật trường hủy
         booking.setStatus(BookingStatus.CANCELLED);
-        return BookingResponse.from(bookingRepository.save(booking));
+        booking.setCancelReason("Khách hàng yêu cầu hủy");
+        booking.setCancelledAt(LocalDateTime.now());
+        booking.setRefundRate(BigDecimal.valueOf(calc.rate()));
+        booking.setRefundAmount(calc.amount());
+        booking.setAppliedPolicy(calc.policyLabel());
+        booking.setRefundStatus(RefundStatus.PENDING_REFUND);
+
+        Booking saved = bookingRepository.save(booking);
+        log.info("Customer cancelled booking #{}: refund={}% ({}đ), policy='{}'",
+                bookingId, calc.rate(), calc.amount(), calc.policyLabel());
+
+        return BookingResponse.from(saved);
     }
 
     /* ───────────────────────────────────────────────────────────────
@@ -236,3 +257,59 @@ public class BookingServiceImpl implements BookingService {
                 .build();
     }
 }
+
+    /* ───────────────────────────────────────────────────────────────
+       HELPER – TÍNH HOÀN TIỀN THEO POLICY
+    _______________________________________________________________ */
+
+    /**
+     * Tính tỷ lệ và số tiền hoàn dựa trên danh sách chính sách và
+     * số giờ còn lại trước ngày check-in.
+     *
+     * Thuật toán: chọn chính sách có minHours lớn nhất mà số giờ thực tế >= minHours.
+     * Nếu không có policy phù hợp → không hoàn (0%).
+     */
+    private PolicyCalculation calculateRefund(Booking booking) {
+        List<CancellationPolicy> policies = policyRepository.findAllByOrderByMinHoursDesc();
+
+        long hoursUntilCheckIn = ChronoUnit.HOURS.between(
+                LocalDateTime.now(),
+                booking.getCheckIn().atStartOfDay()
+        );
+
+        // Mặc định: không có policy nào khớp → 0%
+        int     bestRate  = 0;
+        String  bestLabel = "Hủy trong ngày không hoàn (0%)";
+
+        for (CancellationPolicy p : policies) {
+            if (hoursUntilCheckIn >= p.getMinHours()) {
+                bestRate  = p.getRefundRate();
+                bestLabel = p.getLabel();
+                break; // danh sách đã sắp xếp giảm dần → match đầu tiên là tốt nhất
+            }
+        }
+
+        // Nếu chưa có policy nào trong DB, dùng policy mặc định đơn giản
+        if (policies.isEmpty()) {
+            if (hoursUntilCheckIn >= 48) {
+                bestRate  = 100;
+                bestLabel = "Hủy trước 48h hoàn 100%";
+            } else if (hoursUntilCheckIn >= 24) {
+                bestRate  = 50;
+                bestLabel = "Hủy trước 24h hoàn 50%";
+            } else {
+                bestRate  = 0;
+                bestLabel = "Hủy trong ngày không hoàn (0%)";
+            }
+        }
+
+        BigDecimal total  = booking.getTotalAmount() != null ? booking.getTotalAmount() : BigDecimal.ZERO;
+        BigDecimal amount = total
+                .multiply(BigDecimal.valueOf(bestRate))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+
+        return new PolicyCalculation(bestRate, amount, bestLabel);
+    }
+
+    /** Helper record để trả về kết quả tính refund */
+    private record PolicyCalculation(int rate, BigDecimal amount, String policyLabel) {}
