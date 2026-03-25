@@ -128,10 +128,6 @@ INSERT INTO cancellation_policies (label, min_hours, refund_rate, display_order,
 SELECT 'Hủy trước 24 giờ hoàn 50%', 24, 50, 2, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM cancellation_policies WHERE min_hours = 24);
 
-INSERT INTO cancellation_policies (label, min_hours, refund_rate, display_order, created_at, updated_at)
-SELECT 'Hủy trong ngày không hoàn (0%)', 0, 0, 3, NOW(), NOW()
-WHERE NOT EXISTS (SELECT 1 FROM cancellation_policies WHERE min_hours = 0);
-
 -- ================================================================
 --  ROOMS – Danh sách phòng khách sạn
 -- ================================================================
