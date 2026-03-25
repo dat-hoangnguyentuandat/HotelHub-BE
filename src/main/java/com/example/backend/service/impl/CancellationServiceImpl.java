@@ -289,7 +289,7 @@ public class CancellationServiceImpl implements CancellationService {
      * số giờ còn lại trước ngày check-in.
      *
      * Thuật toán: chọn chính sách có minHours lớn nhất mà số giờ thực tế >= minHours.
-     * Nếu không có policy phù hợp → không hoàn (0%).
+     * Nếu không có policy phù hợp → lấy policy có minHours nhỏ nhất.
      */
     private PolicyCalculation calculateRefund(Booking booking) {
         List<CancellationPolicy> policies = policyRepository.findAllByOrderByMinHoursDesc();
@@ -323,20 +323,26 @@ public class CancellationServiceImpl implements CancellationService {
             return new PolicyCalculation(bestRate, amount, bestLabel);
         }
 
-        // Tìm policy phù hợp
+        // Tìm policy áp dụng (policy có minHours lớn nhất mà <= hoursUntilCheckIn)
+        CancellationPolicy applicablePolicy = null;
         for (CancellationPolicy p : policies) {
             if (hoursUntilCheckIn >= p.getMinHours()) {
-                BigDecimal total  = booking.getTotalAmount() != null ? booking.getTotalAmount() : BigDecimal.ZERO;
-                BigDecimal amount = total
-                        .multiply(BigDecimal.valueOf(p.getRefundRate()))
-                        .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
-                
-                return new PolicyCalculation(p.getRefundRate(), amount, p.getLabel());
+                applicablePolicy = p;
+                break; // Đã sort giảm dần nên policy đầu tiên thỏa mãn là policy tốt nhất
             }
         }
 
-        // Không có policy nào khớp → không hoàn tiền
-        return new PolicyCalculation(0, BigDecimal.ZERO, "Không đủ điều kiện hoàn tiền");
+        // Nếu không tìm thấy policy nào phù hợp, lấy policy có minHours nhỏ nhất (policy cuối cùng)
+        if (applicablePolicy == null) {
+            applicablePolicy = policies.get(policies.size() - 1);
+        }
+
+        BigDecimal total  = booking.getTotalAmount() != null ? booking.getTotalAmount() : BigDecimal.ZERO;
+        BigDecimal amount = total
+                .multiply(BigDecimal.valueOf(applicablePolicy.getRefundRate()))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+
+        return new PolicyCalculation(applicablePolicy.getRefundRate(), amount, applicablePolicy.getLabel());
     }
 
     /** Helper record để trả về kết quả tính refund */
