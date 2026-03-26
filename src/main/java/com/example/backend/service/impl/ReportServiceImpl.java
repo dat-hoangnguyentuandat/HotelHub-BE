@@ -8,9 +8,6 @@ import com.example.backend.repository.PaymentRepository;
 import com.example.backend.service.ReportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
@@ -39,27 +36,33 @@ public class ReportServiceImpl implements ReportService {
         log.info("[getRevenueReport] startDate={}, endDate={}, source={}, paymentStatus={}, page={}, size={}",
                 startDate, endDate, source, paymentStatus, page, size);
 
-        // Tạo pageable
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        // Lấy toàn bộ bookings (sắp xếp giảm dần theo ngày tạo)
+        List<Booking> allBookings = bookingRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
 
-        // Lấy danh sách bookings có payment
-        Page<Booking> bookingPage = bookingRepository.findAll(pageable);
-
-        // Filter theo điều kiện
-        List<Booking> filteredBookings = bookingPage.getContent().stream()
+        // Bước 1: Lọc trước khi phân trang
+        List<Booking> filteredBookings = allBookings.stream()
                 .filter(booking -> {
-                    // Filter theo ngày
+                    // Filter theo ngày bắt đầu
                     if (startDate != null && booking.getCreatedAt().toLocalDate().isBefore(startDate)) {
                         return false;
                     }
+                    // Filter theo ngày kết thúc
                     if (endDate != null && booking.getCreatedAt().toLocalDate().isAfter(endDate)) {
                         return false;
                     }
-                    // Filter theo source (tạm thời để mặc định là "OTA" hoặc "Trực tiếp")
+                    // Filter theo nguồn (source)
                     if (source != null && !source.isEmpty()) {
-                        // Logic xác định source dựa trên booking
                         String bookingSource = determineSource(booking);
                         if (!bookingSource.equalsIgnoreCase(source)) {
+                            return false;
+                        }
+                    }
+                    // Filter theo trạng thái thanh toán (paymentStatus)
+                    if (paymentStatus != null && !paymentStatus.isEmpty()) {
+                        List<Payment> payments = paymentRepository.findByBookingIdOrderByCreatedAtDesc(booking.getId());
+                        Payment payment = payments.isEmpty() ? null : payments.get(0);
+                        String statusText = resolvePaymentStatusText(payment);
+                        if (!statusText.equalsIgnoreCase(paymentStatus)) {
                             return false;
                         }
                     }
@@ -67,7 +70,7 @@ public class ReportServiceImpl implements ReportService {
                 })
                 .collect(Collectors.toList());
 
-        // Tính toán summary
+        // Bước 2: Tính tổng sau khi lọc (summary luôn phản ánh đúng bộ lọc)
         BigDecimal totalRevenue = BigDecimal.ZERO;
         BigDecimal actualRevenue = BigDecimal.ZERO;
         BigDecimal totalExpenses = BigDecimal.ZERO;
@@ -76,9 +79,9 @@ public class ReportServiceImpl implements ReportService {
             List<Payment> payments = paymentRepository.findByBookingIdOrderByCreatedAtDesc(booking.getId());
             Payment payment = payments.isEmpty() ? null : payments.get(0);
             if (payment != null) {
-                totalRevenue = totalRevenue.add(payment.getSubtotal());
-                actualRevenue = actualRevenue.add(payment.getTotalAmount());
-                totalExpenses = totalExpenses.add(payment.getDiscountAmount());
+                totalRevenue = totalRevenue.add(payment.getSubtotal() != null ? payment.getSubtotal() : BigDecimal.ZERO);
+                actualRevenue = actualRevenue.add(payment.getTotalAmount() != null ? payment.getTotalAmount() : BigDecimal.ZERO);
+                totalExpenses = totalExpenses.add(payment.getDiscountAmount() != null ? payment.getDiscountAmount() : BigDecimal.ZERO);
             }
         }
 
@@ -88,17 +91,24 @@ public class ReportServiceImpl implements ReportService {
                 .totalExpenses(totalExpenses)
                 .build();
 
-        // Tạo report items
-        List<ReportResponse.ReportItem> items = filteredBookings.stream()
+        // Bước 3: Phân trang sau khi đã lọc
+        int totalItems = filteredBookings.size();
+        int totalPages = (size > 0) ? (int) Math.ceil((double) totalItems / size) : 1;
+        int fromIndex = Math.min(page * size, totalItems);
+        int toIndex = Math.min(fromIndex + size, totalItems);
+        List<Booking> pagedBookings = filteredBookings.subList(fromIndex, toIndex);
+
+        // Bước 4: Map sang ReportItem
+        List<ReportResponse.ReportItem> items = pagedBookings.stream()
                 .map(this::mapToReportItem)
                 .collect(Collectors.toList());
 
         return ReportResponse.builder()
                 .summary(summary)
                 .items(items)
-                .totalItems((int) bookingPage.getTotalElements())
+                .totalItems(totalItems)
                 .currentPage(page)
-                .totalPages(bookingPage.getTotalPages())
+                .totalPages(totalPages)
                 .build();
     }
 
@@ -108,23 +118,7 @@ public class ReportServiceImpl implements ReportService {
 
         String bookingCode = "HD-2023-" + String.format("%03d", booking.getId());
         String source = determineSource(booking);
-        String paymentStatusText = "Chờ thanh toán";
-        
-        if (payment != null && payment.getStatus() != null) {
-            switch (payment.getStatus()) {
-                case SUCCESS:
-                    paymentStatusText = "Đã thanh toán";
-                    break;
-                case PENDING:
-                case PROCESSING:
-                    paymentStatusText = "Chờ thanh toán";
-                    break;
-                case FAILED:
-                case CANCELLED:
-                    paymentStatusText = "Thất bại";
-                    break;
-            }
-        }
+        String paymentStatusText = resolvePaymentStatusText(payment);
 
         return ReportResponse.ReportItem.builder()
                 .bookingCode(bookingCode)
@@ -148,6 +142,24 @@ public class ReportServiceImpl implements ReportService {
             return "Trực tiếp";
         } else {
             return "OTA";
+        }
+    }
+
+    private String resolvePaymentStatusText(Payment payment) {
+        if (payment == null || payment.getStatus() == null) {
+            return "Chờ thanh toán";
+        }
+        switch (payment.getStatus()) {
+            case SUCCESS:
+                return "Đã thanh toán";
+            case PENDING:
+            case PROCESSING:
+                return "Chờ thanh toán";
+            case FAILED:
+            case CANCELLED:
+                return "Thất bại";
+            default:
+                return "Chờ thanh toán";
         }
     }
 }
