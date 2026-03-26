@@ -51,6 +51,7 @@ public class ServiceBooking {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
+    @Builder.Default
     private ServiceBookingStatus status = ServiceBookingStatus.PENDING;
 
     @Column(length = 500)
