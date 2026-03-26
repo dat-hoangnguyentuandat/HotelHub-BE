@@ -5,6 +5,8 @@ import com.example.backend.entity.BookingStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -75,6 +77,21 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         @Param("excludeId") Long      excludeId
     );
 
+    /* ── Lock pessimistic: đọc có lock khi kiểm tra conflict (chống race condition) ── */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT b FROM Booking b
+        WHERE b.roomType = :roomType
+          AND b.status NOT IN (com.example.backend.entity.BookingStatus.CANCELLED)
+          AND b.checkIn  < :checkOut
+          AND b.checkOut > :checkIn
+        """)
+    List<Booking> findConflictingBookingsWithLock(
+        @Param("roomType")  String    roomType,
+        @Param("checkIn")   LocalDate checkIn,
+        @Param("checkOut")  LocalDate checkOut
+    );
+
     /* ══════════════════════════════════════════════════════════
        DASHBOARD QUERIES
     ══════════════════════════════════════════════════════════ */
@@ -83,10 +100,12 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         SELECT COALESCE(SUM(b.totalAmount), 0) FROM Booking b
         WHERE b.status IN (
             com.example.backend.entity.BookingStatus.CHECKED_IN,
-            com.example.backend.entity.BookingStatus.CHECKED_OUT
+            com.example.backend.entity.BookingStatus.CHECKED_OUT,
+            com.example.backend.entity.BookingStatus.CONFIRMED,
+            com.example.backend.entity.BookingStatus.PENDING
         )
-          AND b.checkIn >= :from
-          AND b.checkIn <  :to
+          AND CAST(b.createdAt AS localdate) >= :from
+          AND CAST(b.createdAt AS localdate) <  :to
         """)
     BigDecimal sumRevenueBetween(
         @Param("from") LocalDate from,
@@ -97,10 +116,11 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         SELECT COUNT(b) FROM Booking b
         WHERE b.status IN (
             com.example.backend.entity.BookingStatus.CHECKED_IN,
-            com.example.backend.entity.BookingStatus.CHECKED_OUT
+            com.example.backend.entity.BookingStatus.CHECKED_OUT,
+            com.example.backend.entity.BookingStatus.CONFIRMED
         )
-          AND b.checkIn >= :from
-          AND b.checkIn <  :to
+          AND CAST(b.createdAt AS localdate) >= :from
+          AND CAST(b.createdAt AS localdate) <  :to
         """)
     long countCheckedInBetween(
         @Param("from") LocalDate from,
