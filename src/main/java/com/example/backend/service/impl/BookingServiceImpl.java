@@ -9,6 +9,7 @@ import com.example.backend.entity.BookingStatus;
 import com.example.backend.entity.CancellationPolicy;
 import com.example.backend.entity.RefundStatus;
 import com.example.backend.entity.User;
+import com.example.backend.exception.BookingConflictException;
 import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.BookingRepository;
 import com.example.backend.repository.CancellationPolicyRepository;
@@ -55,20 +56,35 @@ public class BookingServiceImpl implements BookingService {
             throw new IllegalArgumentException("Ngày trả phòng phải sau ngày nhận phòng");
         }
 
-        // 2. Tính số đêm
+        // 2. Kiểm tra xung đột phòng với PESSIMISTIC_WRITE lock
+        //    → khóa các row liên quan, transaction thứ 2 phải đợi transaction thứ 1 commit
+        //    → tránh race condition khi 2 request đến cùng lúc
+        List<com.example.backend.entity.Booking> conflicts =
+                bookingRepository.findConflictingBookingsWithLock(
+                        req.getRoomType(), req.getCheckIn(), req.getCheckOut());
+
+        if (!conflicts.isEmpty()) {
+            throw new BookingConflictException(
+                "Phòng loại '" + req.getRoomType() + "' đã được đặt trong khoảng thời gian " +
+                req.getCheckIn() + " → " + req.getCheckOut() +
+                ". Vui lòng chọn ngày khác hoặc loại phòng khác."
+            );
+        }
+
+        // 3. Tính số đêm
         int nights = (int) ChronoUnit.DAYS.between(req.getCheckIn(), req.getCheckOut());
 
-        // 3. Tính tổng tiền
+        // 4. Tính tổng tiền
         BigDecimal total = req.getPricePerNight()
                 .multiply(BigDecimal.valueOf((long) nights * req.getRooms()));
 
-        // 4. Tìm user (nếu đã đăng nhập)
+        // 5. Tìm user (nếu đã đăng nhập)
         User user = null;
         if (userEmail != null) {
             user = userRepository.findByEmail(userEmail).orElse(null);
         }
 
-        // 5. Lưu
+        // 6. Lưu
         Booking booking = Booking.builder()
                 .guestName(req.getGuestName())
                 .guestPhone(req.getGuestPhone())
